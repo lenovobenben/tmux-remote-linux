@@ -70,11 +70,30 @@ EOF
   esac
 }
 
+detect_stale_run() {
+  local recent b end_marker
+  recent="$(tmux capture-pane -t "$target" -p -S -20)"
+  while IFS= read -r b; do
+    [ -z "$b" ] && continue
+    end_marker="${b/BEGIN__/END__}"
+    if ! printf '%s\n' "$recent" | grep -qF "$end_marker"; then
+      cat >&2 <<EOF
+[run.sh] stale run marker detected: $b
+[run.sh] A previous run.sh command may still be running or its output was lost.
+[run.sh] Use read.sh to inspect the pane. Wait for completion or send Ctrl-C to recover.
+EOF
+      exit 6
+    fi
+  done < <(printf '%s\n' "$recent" | grep -oE '__CODEX_RUN_[0-9]+_[0-9]+_BEGIN__' || true)
+}
+
 command_text="$1"
 
 if [ "$detect_interactive" != "0" ]; then
   detect_interactive_prompt
 fi
+
+detect_stale_run
 
 remote_tmux_confirm_if_production "$command_text"
 
