@@ -49,6 +49,8 @@ $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh '<command>'
 
 The approval is per command. Do not reuse a digit for a later command. Do not batch unrelated production commands under one approval.
 
+**Anti-bypass rule**: You MUST NOT set `REMOTE_TMUX_PROD_APPROVAL_EXPECTED_DIGIT`, `REMOTE_TMUX_PROD_APPROVAL_DIGIT`, or `REMOTE_TMUX_COMMAND_EXPLANATION` yourself unless the user has explicitly replied with the approval digit in the current conversation. These variables are a relay of the user's informed consent, not a way to skip the approval step. Setting them without a matching user reply is a protocol violation, even for seemingly harmless commands like `exit`, `cd`, or read-only queries.
+
 - Read recent remote terminal output:
 
 ```bash
