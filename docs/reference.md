@@ -247,6 +247,51 @@ Thu Apr 30 10:30:00 UTC 2026
 
 如果远端命令返回非零退出码，`run.sh` 会打印 `[exit N]`，并且本地脚本也会用同样的退出码退出。
 
+## 整体工作流程
+
+这个 skill 的核心模型是：用户先准备好一个本地 tmux pane，并在里面完成远端登录、MFA、SSH 跳转、切换用户、选择 kubeconfig 等初始化；agent 只通过 `read.sh`、`send.sh` 和 `run.sh` 读写这个 pane。脚本不管理 SSH 连接、不保存凭据、不知道服务器资产清单，也不会创建独立的远端会话。
+
+一次典型操作通常是：
+
+1. agent 先用 `read.sh` 查看当前 pane。
+2. 根据 prompt 和输出判断当前主机、用户、目录、是否在 REPL、是否有前台命令正在运行。
+3. 根据命令类型选择 `run.sh` 或 `send.sh`。
+4. 如果目标是生产环境，`send.sh` / `run.sh` 在发送命令前要求人工确认。
+5. 命令执行后，agent 读取或截取输出，向用户汇总关键结果。
+6. 如果遇到密码、MFA、token 等敏感提示，agent 停止发送输入，由用户直接在 tmux pane 里完成，然后 agent 再读取当前状态继续。
+
+### `read.sh`
+
+`read.sh` 只读取 tmux pane 最近若干行输出，不向远端发送任何输入。它会先检查 `REMOTE_TMUX_ENV`，然后读取 `REMOTE_TMUX_TARGET` 指向的 pane。默认会过滤明显的 Codex wrapper 和 marker 行，避免把传输层细节混进正常上下文。
+
+`read.sh` 适合用来确认当前 prompt、主机、目录、前台程序状态，或者在长命令运行时少量轮询进度。
+
+### `send.sh`
+
+`send.sh` 会把命令按字面发送到 tmux pane，并按一次回车。它不包裹命令、不截取输出，也不知道远端退出码。
+
+`send.sh` 适合会改变当前交互 shell 状态的命令，例如 `cd`、`export`、`sudo -i`；也适合 REPL 输入、长时间运行的命令、需要用户手动输入密码后的后续操作。因为它直接作用于当前 pane，发送前必须确认当前 prompt 和上下文。
+
+### `run.sh`
+
+`run.sh` 适合短小、非交互式检查命令。它会先检查配置和当前 pane 状态，拒绝在明显的 MySQL、psql、Python、Spark 等交互式 prompt 上包裹命令；如果发现上一次 `run.sh` 的 begin marker 还没有对应的 end marker，也会拒绝继续发送新命令，避免命令叠加污染 pane。
+
+通过检查后，`run.sh` 会生成唯一 begin/end marker，在本地把用户命令 base64 编码，然后向 tmux pane 发送一个 wrapper。这个 wrapper 在远端打印 begin marker，执行：
+
+```bash
+base64 -d | bash
+```
+
+随后记录远端命令的退出码，打印 end marker 和退出码。`run.sh` 再从 tmux pane 最近输出中找到 begin/end marker，只返回这次命令的输出，并打印 `[exit N]`。本地脚本也会用同样的退出码结束。
+
+命令通过 base64 传输，是为了减少嵌套引号、管道、分号、多层 shell 转义带来的问题。命令在远端子 `bash` 中执行，因此 `exit 7` 只会结束子进程，不会关闭当前交互 shell；但也意味着 `cd`、`export` 这类状态变化不会保留到命令结束之后。
+
+### 状态边界
+
+tmux pane 是共享的可变状态，不是隔离沙箱。`send.sh` 会改变当前交互 shell；`run.sh` 会在当前目录和环境的基础上启动一个子 `bash`；用户手动输入、前台程序、REPL、SSH 跳转、容器 shell 和 kubeconfig 都会影响后续命令含义。`vim`、`nano`、`less`、`top`、`htop`、`watch` 这类全屏 TUI 程序不是线性文本协议，agent 很难可靠判断模式、光标、滚屏、保存状态和退出行为，应尽量避免由 agent 操作。
+
+因此，agent 在继续操作前应确认当前 pane 状态；未知大小的输出应有限读取；敏感输入应由用户手动完成；生产环境命令应逐条确认。这个项目提供的是一个很窄的终端传输通道，不是权限系统，也不是远端状态管理器。
+
 ## 配置项
 
 ```bash
@@ -385,6 +430,12 @@ scripts/send.sh 'tail -f /var/log/app.log'
 
 ## 注意事项
 
+- **把 agent 正在使用的 tmux pane 视为 agent 托管终端。**用户尽量不要同时在这个 pane 里手动输入命令。手动操作会改变 cwd、用户、主机、环境变量、kubeconfig、REPL 状态和输出边界，可能导致 agent 误判上下文或把输出归属到错误命令。
+- 如果需要手动操作，建议使用另一个终端、另一个 tmux pane 或另一个 tmux session；如果希望 agent 后续理解和接手，最好直接让 agent 代为执行。
+- 如果已经手动改动了托管 pane，应先告诉 agent 执行了什么、当前在哪台机器、哪个用户、哪个目录、是否进入了容器或 REPL，再让它继续。
+- **敏感输入由用户手动完成。**不要把 SSH 密码、数据库密码、`sudo` 密码、MFA code、API token、私钥内容或其他凭据贴给 agent。
+- 若命令进入密码、MFA 或其他敏感提示，agent 应停止继续发送输入，并让用户直接在 tmux pane 中输入。用户完成后只需告诉 agent“已经输入完成”“已经登录成功”或“可以继续”。agent 随后应重新读取 pane，确认当前 prompt、主机、用户、目录和上下文，再继续操作。
+- 避免让 agent 操作 `vim`、`nano`、`less`、`top`、`htop`、`watch` 等全屏 TUI。查看文件优先使用 `sed -n`、`head`、`tail`、`grep`；搜索优先使用 `grep`、`rg`、`find`；需要编辑复杂文件时，建议用户手动编辑，完成后告诉 agent 继续检查。
 - 把 tmux pane 当成共享的可变状态。
 - 执行任何操作前，先确认当前 prompt、主机、用户、目录、kubeconfig 和 shell 上下文。
 - 小心陈旧 pane。pane 里显示的主机可能已经不是你以为的那个。
@@ -404,6 +455,24 @@ scripts/send.sh 'tail -f /var/log/app.log'
 - `helm upgrade`、`helm uninstall`
 - `terraform apply`、`terraform destroy`
 - 防火墙、路由、重启、关机、数据库迁移、数据删除类命令
+
+## 未来：审计日志
+
+审计日志是一个有价值但尚未实现的方向。这个项目当前依赖 tmux scrollback、agent 对话记录和用户自己的操作记录；如果 agent 退出、tmux session 关闭或 scrollback 被覆盖，事后复盘会不够稳定。
+
+未来可以考虑增加本地 append-only 审计日志，用于记录 agent 通过 `send.sh` / `run.sh` 发送过的命令、目标 pane、环境、时间、生产批准说明、退出码和 `run.sh` 捕获到的输出摘要。日志格式可以优先考虑 JSONL，方便以后写查询、过滤、摘要和风险分析工具。
+
+需要明确的是，审计日志的核心价值不只是“记录下来”，而是“以后怎么查”。在查询工具和使用方式没有想清楚之前，不宜过早把日志格式和字段固定下来。
+
+设计时还需要处理这些边界：
+
+- `run.sh` 可以记录命令输出和退出码，`send.sh` 通常只能记录发送了什么，未必知道后续输出和退出码。
+- 用户手动输入的密码、MFA、token 或其他敏感内容不应被 agent 记录。
+- 审计日志本身可能包含敏感命令、生产输出、业务数据或连接信息，应作为本地敏感文件处理，并使用严格权限。
+- 大输出不应完整写入主日志；可以只记录摘要、截断内容，或把详细输出拆到单独文件。
+- 多 agent、多 pane、多 session 并发写日志时，需要有 request id / run id / target 等字段帮助归因。
+
+这个功能适合等查询需求更清楚后再实现。当前文档只记录设计方向，不表示现有脚本已经提供审计日志能力。
 
 ## 常见问题
 

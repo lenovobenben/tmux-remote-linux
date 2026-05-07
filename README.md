@@ -86,6 +86,10 @@ Most users only need to remember three things:
 - You must choose an environment: `production` or `non-production`
 - Short checks use `run.sh`; interactive input, `cd`, `export`, and long-running commands use `send.sh`
 
+**Treat the target tmux pane as agent-managed.** Avoid typing your own commands into the same pane while the AI is using it. If you need manual work, open another terminal, pane, or session, or ask the agent to run the command. If you did change the managed pane manually, tell the agent what changed before asking it to continue.
+
+**Sensitive prompts are user-owned.** Do not paste passwords, MFA codes, tokens, private keys, or other secrets into the AI chat. If a command asks for a secret, type it directly in the tmux pane, then tell the agent that the step is complete.
+
 Useful tmux commands:
 
 ```bash

@@ -100,6 +100,9 @@ Prefer the bundled scripts inside this skill directory so the workflow remains s
 - Treat the tmux pane as shared state. The current prompt, cwd, active kubeconfig, and any running foreground command matter.
 - Prefer `run.sh` for short, non-interactive inspection commands because it gives a scoped output and exit code.
 - Prefer `send.sh` for interactive programs, commands expected to run for a long time, commands that intentionally change shell state such as `cd` or `export`, and commands with complex quoting.
+- Bound unknown output. Do not dump unknown-size files, logs, or command results unless the user explicitly asks for full output.
+- Prefer limited reads: `sed -n '1,120p' file`, `tail -n 100`, keyword/time filters, `journalctl -n --no-pager`, `docker logs --tail`, or `kubectl logs --tail`; check `ls -lh`/`wc` only when full content is needed.
+- Avoid full-screen TUI programs such as `vim`, `nano`, `less`, `top`, `htop`, and `watch`; use bounded non-interactive commands instead, or ask the user to handle the TUI and report when it is ready.
 - When the pane is inside an inner interactive environment such as MySQL, Spark shell, psql, Python, a pod shell, or an SSH session waiting at a prompt, do not wrap the next command with `run.sh`. Send one REPL command with `send.sh`, then poll with `read.sh`. For MySQL, prefer `\g` as the statement terminator or ensure `send.sh` sends the text literally before pressing Enter.
 - If `run.sh` refuses because it detected an interactive prompt, use `send.sh`; do not disable the detector unless the user explicitly asks.
 - For slow remote commands, wait and poll. Network, cold reads, package pulls, and K8s operations may be slow. Do not rush to `Ctrl-C`.
