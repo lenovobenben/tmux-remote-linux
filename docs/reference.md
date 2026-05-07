@@ -455,14 +455,14 @@ rm -f "$tmp"
 
 ## 注意事项
 
-- **稳妥优先，不追求全面交互能力。**这个 skill 适合普通 shell 命令、短检查、有限输出、长任务启动和状态确认；不适合让 agent 像人一样操作复杂交互式命令行。
-- **托管 pane 不应以交互式命令行状态进入 agent。**把 pane 交给 agent 前，应退出 MySQL、Redis、psql、Spark shell、Python REPL、Node REPL、容器内交互 shell、`vim`、`less`、`top`、`watch` 等状态，回到清晰的普通 shell prompt。
-- **把 agent 正在使用的 tmux pane 视为 agent 托管终端。**用户尽量不要同时在这个 pane 里手动输入命令。手动操作会改变 cwd、用户、主机、环境变量、kubeconfig、REPL 状态和输出边界，可能导致 agent 误判上下文或把输出归属到错误命令。
-- **最佳实践是让托管 tmux session 默认不可见。**远端 shell 准备好后，建议用 `Ctrl-b d` detach 这个 tmux session，让 agent 在后台操作。用户只有在需要输入密码、MFA、token，或明确要接管时才 `tmux attach -t remote` 回来；操作完成后应再次 detach。不要把 agent 托管 pane 长时间留在普通终端窗口里，避免顺手拿来做其他生产或测试操作。
+- **稳妥优先，不追求全面交互能力。** 这个 skill 适合普通 shell 命令、短检查、有限输出、长任务启动和状态确认；不适合让 agent 像人一样操作复杂交互式命令行。
+- **托管 pane 不应以交互式命令行状态进入 agent。** 把 pane 交给 agent 前，应退出 MySQL、Redis、psql、Spark shell、Python REPL、Node REPL、容器内交互 shell、`vim`、`less`、`top`、`watch` 等状态，回到清晰的普通 shell prompt。
+- **把 agent 正在使用的 tmux pane 视为 agent 托管终端。** 用户尽量不要同时在这个 pane 里手动输入命令。手动操作会改变 cwd、用户、主机、环境变量、kubeconfig、REPL 状态和输出边界，可能导致 agent 误判上下文或把输出归属到错误命令。
+- **最佳实践是让托管 tmux session 默认不可见。** 远端 shell 准备好后，建议用 `Ctrl-b d` detach 这个 tmux session，让 agent 在后台操作。用户只有在需要输入密码、MFA、token，或明确要接管时才 `tmux attach -t remote` 回来；操作完成后应再次 detach。不要把 agent 托管 pane 长时间留在普通终端窗口里，避免顺手拿来做其他生产或测试操作。
 - `REMOTE_TMUX_ENV` 只控制脚本的确认策略，不会检测当前远端到底是测试环境还是生产环境。如果用户手动把托管 pane 从测试机切到生产机，agent 可能仍按旧假设继续发送命令。因此，托管 pane 不应作为日常手工运维终端使用。
 - 如果需要手动操作，建议使用另一个终端、另一个 tmux pane 或另一个 tmux session；如果希望 agent 后续理解和接手，最好直接让 agent 代为执行。
 - 如果已经手动改动了托管 pane，应先告诉 agent 执行了什么、当前在哪台机器、哪个用户、哪个目录、是否进入了容器或 REPL，再让它继续。
-- **敏感输入由用户手动完成。**不要把 SSH 密码、数据库密码、`sudo` 密码、MFA code、API token、私钥内容或其他凭据贴给 agent。
+- **敏感输入由用户手动完成。** 不要把 SSH 密码、数据库密码、`sudo` 密码、MFA code、API token、私钥内容或其他凭据贴给 agent。
 - 若命令进入密码、MFA 或其他敏感提示，agent 应停止继续发送输入，并让用户直接在 tmux pane 中输入。用户完成后只需告诉 agent“已经输入完成”“已经登录成功”或“可以继续”。agent 随后应重新读取 pane，确认当前 prompt、主机、用户、目录和上下文，再继续操作。
 - 避免让 agent 操作 `vim`、`nano`、`less`、`top`、`htop`、`watch` 等全屏 TUI。查看文件优先使用 `sed -n`、`head`、`tail`、`grep`；搜索优先使用 `grep`、`rg`、`find`；需要编辑复杂文件时，建议用户手动编辑，完成后告诉 agent 继续检查。
 - 把 tmux pane 当成共享的可变状态。
