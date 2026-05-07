@@ -6,6 +6,8 @@ This is the full reference manual. For the short setup path, start with [../READ
 
 这个工具适合这样的场景：用户已经手动完成了堡垒机登录、MFA、SSH 跳转、内网访问、切换 root、选择 kubeconfig 等准备工作。Codex 不需要拿到凭据，也不需要自己重新建立 SSH 连接，只通过 tmux pane 读取输出、发送命令、汇总结果。
 
+这个项目的目标是**稳妥地代理普通 shell 操作**，不是完整模拟人类使用终端。它有意不追求高交互式命令行和全屏 TUI 的全面支持。
+
 ## 为什么需要这个工具
 
 很多生产环境、内网环境、堡垒机环境不能让通用自动化 agent 直接连接。用户往往已经有一个配置好的终端，里面的登录态、网络、权限和上下文都是正确的。
@@ -223,7 +225,7 @@ scripts/read.sh
 scripts/read.sh 80
 ```
 
-发送一条交互式或改变 shell 状态的命令：
+发送一条改变 shell 状态或长时间运行的 shell 命令：
 
 ```bash
 scripts/send.sh 'cd /var/log'
@@ -270,7 +272,9 @@ Thu Apr 30 10:30:00 UTC 2026
 
 `send.sh` 会把命令按字面发送到 tmux pane，并按一次回车。它不包裹命令、不截取输出，也不知道远端退出码。
 
-`send.sh` 适合会改变当前交互 shell 状态的命令，例如 `cd`、`export`、`sudo -i`；也适合 REPL 输入、长时间运行的命令、需要用户手动输入密码后的后续操作。因为它直接作用于当前 pane，发送前必须确认当前 prompt 和上下文。
+`send.sh` 适合会改变当前交互 shell 状态的命令，例如 `cd`、`export`、`sudo -i`；也适合长时间运行的 shell 命令、需要用户手动输入密码后的后续操作。因为它直接作用于当前 pane，发送前必须确认当前 prompt 和上下文。
+
+`send.sh` 不承诺支持 MySQL、Redis、Spark shell、psql、Python、Node 等 REPL 式交互命令行。对这类工具，优先使用一次性非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`。如果 pane 已经进入 REPL，agent 应报告当前状态，并请用户退出或手动处理。
 
 ### `run.sh`
 
@@ -400,7 +404,7 @@ scripts/run.sh 'kubectl get pods -n default'
 scripts/run.sh 'df -h'
 ```
 
-会改变 shell 状态、需要交互、或会持续运行的命令适合用 `send.sh`：
+会改变 shell 状态或会持续运行的 shell 命令适合用 `send.sh`：
 
 ```bash
 scripts/send.sh 'cd /opt/app'
@@ -410,7 +414,7 @@ scripts/send.sh 'tail -f /var/log/app.log'
 
 `run.sh` 会在远端子 `bash` 进程里执行命令。因此 `cd`、`export` 这类 shell 状态变化不会在命令结束后保留。需要保留状态时，请用 `send.sh`。
 
-如果 pane 已经进入了子交互 CLI，请使用 `send.sh`，不要使用 `run.sh`。典型例子包括 `mysql>`、`psql>`、`spark-shell>`、Python REPL、已经 attach 进去的容器 shell，或者任何状态存在于当前交互程序内部的 prompt。`send.sh` 会按字面发送文本再按回车，更适合 SQL 语句、Python 表达式、Spark shell 命令这类 REPL 输入。
+不支持由 agent 操作 REPL 式交互命令行。典型例子包括 `mysql>`、`redis-cli`、`psql>`、`spark-shell>`、Python REPL、Node REPL、已经 attach 进去的容器 shell，或者任何状态存在于当前交互程序内部的 prompt。请改用非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`；如果已经进入 REPL，应由用户退出或手动处理后再让 agent 继续。
 
 复杂的多步骤检查，尤其是跨多台机器、包含循环、正则、管道和多层 `ssh` 的检查，不适合硬拼成很长的一行 shell。多层引号会同时经过本地 shell、`run.sh`、远端 shell、子 `bash` 和内层 `ssh`，很容易出现语法错误。
 
@@ -451,6 +455,8 @@ rm -f "$tmp"
 
 ## 注意事项
 
+- **稳妥优先，不追求全面交互能力。**这个 skill 适合普通 shell 命令、短检查、有限输出、长任务启动和状态确认；不适合让 agent 像人一样操作复杂交互式命令行。
+- **托管 pane 不应以交互式命令行状态进入 agent。**把 pane 交给 agent 前，应退出 MySQL、Redis、psql、Spark shell、Python REPL、Node REPL、容器内交互 shell、`vim`、`less`、`top`、`watch` 等状态，回到清晰的普通 shell prompt。
 - **把 agent 正在使用的 tmux pane 视为 agent 托管终端。**用户尽量不要同时在这个 pane 里手动输入命令。手动操作会改变 cwd、用户、主机、环境变量、kubeconfig、REPL 状态和输出边界，可能导致 agent 误判上下文或把输出归属到错误命令。
 - **最佳实践是让托管 tmux session 默认不可见。**远端 shell 准备好后，建议用 `Ctrl-b d` detach 这个 tmux session，让 agent 在后台操作。用户只有在需要输入密码、MFA、token，或明确要接管时才 `tmux attach -t remote` 回来；操作完成后应再次 detach。不要把 agent 托管 pane 长时间留在普通终端窗口里，避免顺手拿来做其他生产或测试操作。
 - `REMOTE_TMUX_ENV` 只控制脚本的确认策略，不会检测当前远端到底是测试环境还是生产环境。如果用户手动把托管 pane 从测试机切到生产机，agent 可能仍按旧假设继续发送命令。因此，托管 pane 不应作为日常手工运维终端使用。
@@ -465,7 +471,7 @@ rm -f "$tmp"
 - 小心 alias、shell function、环境变量和虚拟环境。
 - 生产环境下，不理解命令和影响范围时，不要输入或回复批准数字。
 - 生产环境每条命令都应该单独确认。不要只根据命令开头判断风险；shell 上下文、kubeconfig、alias、环境变量和业务逻辑都可能改变真实影响。
-- 交互式命令用 `send.sh`，有边界的检查命令用 `run.sh`。
+- 改变 shell 状态或长时间运行的 shell 命令用 `send.sh`，有边界的检查命令用 `run.sh`；REPL 式交互命令行不由 agent 操作。
 - 避免通过这个工具执行多行生产操作。复杂流程应由用户自己在终端里操作。
 - 不要把这个项目当成权限系统。它只是本地安全保护，不是安全边界。
 
@@ -548,7 +554,7 @@ scripts/read.sh 200
 
 ### `interactive prompt detected`
 
-当前 pane 看起来已经在 MySQL、psql、Python、Spark shell、redis-cli、mongo shell、sqlite 等子交互 CLI 里。请使用 `send.sh` 发送一条 REPL 输入，再用 `read.sh` 查看结果。
+当前 pane 看起来已经在 MySQL、psql、Python、Spark shell、redis-cli、mongo shell、sqlite 等子交互 CLI 里。agent 不应继续发送 REPL 输入。请用户退出或手动处理该 REPL，或者改用 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e` 这类非交互命令。
 
 ### `run.sh` 里的 `cd` 或 `export` 没有保留
 

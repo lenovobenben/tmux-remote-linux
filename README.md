@@ -4,6 +4,8 @@
 
 It is useful when you have already logged in through SSH, a bastion host, MFA, VPN, root switching, or a prepared kubeconfig. The AI tool does not need your credentials and does not open its own remote connection. It only reads and writes the tmux pane you point it at.
 
+This skill is designed for reliable shell operations, not full terminal interactivity. Do not hand the pane to an agent while it is inside a REPL or full-screen TUI such as MySQL, Redis, Python, Node, Spark shell, `vim`, `less`, or `top`.
+
 For the full manual, configuration reference, and troubleshooting notes, see [docs/reference.md](docs/reference.md).
 
 ## Platform Notes
@@ -84,7 +86,7 @@ Most users only need to remember three things:
 
 - Default target: `remote:0.0`
 - You must choose an environment: `production` or `non-production`
-- Short checks use `run.sh`; interactive input, `cd`, `export`, and long-running commands use `send.sh`
+- Short checks use `run.sh`; `cd`, `export`, and long-running shell commands use `send.sh`; REPL-style CLIs are not supported
 
 **Treat the target tmux pane as agent-managed.** Avoid typing your own commands into the same pane while the AI is using it. If you need manual work, open another terminal, pane, or session, or ask the agent to run the command. If you did change the managed pane manually, tell the agent what changed before asking it to continue.
 

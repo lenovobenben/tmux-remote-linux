@@ -9,6 +9,8 @@ metadata:
 
 Use the user's tmux bridge when the task is about operating a remote Linux terminal that the user has opened locally. This skill is a generic terminal transport: read remote output, send commands, and report results.
 
+Reliability is more important than broad terminal interactivity. This skill intentionally avoids high-interaction command-line programs and full-screen terminal UIs.
+
 ## Interface
 
 The scripts default to tmux target `remote:0.0`. Override it with `REMOTE_TMUX_TARGET` when the user has multiple remote panes.
@@ -76,7 +78,7 @@ $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh '<command>'
 
 `run.sh` sends the command through base64, executes it in a remote `bash` child process, waits briefly, captures recent pane output, and prints only the output between its unique markers. It appends `[exit N]` when the end marker is visible, and the local script exits with the remote command's exit code. It does not dump old pane history if its begin marker is missing. For long-running commands, if the end marker is not visible yet, wait and call `read.sh` to inspect progress rather than interrupting.
 
-Important: `run.sh` always starts a fresh non-interactive `bash` child. Do not use it to query or control state that only exists inside the current interactive program, such as `mysql>`, `spark-shell>`, `psql>`, a Python REPL, an attached container shell, or shell in-memory history. Use `read.sh` to identify the current prompt, then use `send.sh` for the exact REPL input.
+Important: `run.sh` always starts a fresh non-interactive `bash` child. Do not use it to query or control state that only exists inside the current interactive program, such as `mysql>`, `redis-cli`, `spark-shell>`, `psql>`, a Python REPL, a Node REPL, an attached container shell, or shell in-memory history. Use `read.sh` to identify and report the current prompt, then ask the user to exit or handle that REPL manually.
 
 Useful optional environment variables:
 
@@ -101,13 +103,15 @@ Prefer the bundled scripts inside this skill directory so the workflow remains s
 - Start by reading the pane unless the user gave a precise command to run.
 - Treat the tmux pane as shared state. The current prompt, cwd, active kubeconfig, and any running foreground command matter.
 - Prefer `run.sh` for short, non-interactive inspection commands because it gives a scoped output and exit code.
-- Prefer `send.sh` for interactive programs, commands expected to run for a long time, commands that intentionally change shell state such as `cd` or `export`, and commands with complex quoting.
+- Prefer `send.sh` for commands expected to run for a long time, commands that intentionally change shell state such as `cd` or `export`, and commands with complex quoting.
+- The managed pane must not enter agent control while it is inside an interactive CLI, REPL, or TUI. If it is already in one, stop and ask the user to exit or handle it manually before continuing.
+- Interactive CLIs and REPLs are not supported. Do not operate MySQL, Redis, Spark shell, psql, Python, Node, or similar prompts by sending REPL input. Prefer one-shot non-interactive commands such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`.
 - Bound unknown output. Do not dump unknown-size files, logs, or command results unless the user explicitly asks for full output.
 - Prefer limited reads: `sed -n '1,120p' file`, `tail -n 100`, keyword/time filters, `journalctl -n --no-pager`, `docker logs --tail`, or `kubectl logs --tail`; check `ls -lh`/`wc` only when full content is needed.
 - For complex multi-step checks, prefer a temporary script in non-production instead of fragile deeply nested one-liners; use `/tmp`, bounded output, and clean it up.
 - Avoid full-screen TUI programs such as `vim`, `nano`, `less`, `top`, `htop`, and `watch`; use bounded non-interactive commands instead, or ask the user to handle the TUI and report when it is ready.
-- When the pane is inside an inner interactive environment such as MySQL, Spark shell, psql, Python, a pod shell, or an SSH session waiting at a prompt, do not wrap the next command with `run.sh`. Send one REPL command with `send.sh`, then poll with `read.sh`. For MySQL, prefer `\g` as the statement terminator or ensure `send.sh` sends the text literally before pressing Enter.
-- If `run.sh` refuses because it detected an interactive prompt, use `send.sh`; do not disable the detector unless the user explicitly asks.
+- When the pane is inside an inner interactive environment such as MySQL, Redis, Spark shell, psql, Python, Node, or a pod shell, do not use `run.sh` or `send.sh` for REPL commands. Use `read.sh` to report the state and ask the user to exit or handle the REPL manually.
+- If `run.sh` refuses because it detected an interactive prompt, do not disable the detector; ask the user to exit or handle the REPL manually.
 - For slow remote commands, wait and poll. Network, cold reads, package pulls, and K8s operations may be slow. Do not rush to `Ctrl-C`.
 - Only send `Ctrl-C`, `pkill`, `kill`, `umount`, `helm upgrade`, `kubectl delete`, or similar disruptive commands when the user asks, clearly approves, or the terminal is unusable and recovery is necessary.
 - Treat destructive or hard-to-reverse operations as requiring explicit confirmation. This includes `rm`, `rm -f`, `rm -rf`, deleting directories, deleting logs or result files, clearing caches, overwriting files with redirection, truncating files, moving data out of the way, restarting services, and cleaning test data. Before running one, briefly state the exact action and likely impact, then wait for the user to approve.
