@@ -23,6 +23,8 @@ export REMOTE_TMUX_ENV=non-production
 
 Do not infer this value. Ask the user if it is not already set or explicitly provided. In `production` mode, every command sent through `send.sh` or `run.sh` must stop for explicit user confirmation. Interactive CLI confirmation shows a warning with `!!!`; chat-approved commands stay quiet because the chat prompt already showed the production approval. In `non-production` mode, commands may run without production confirmation.
 
+When the user selects the environment, briefly recommend detaching the managed tmux session after setup (`Ctrl-b d`) and re-attaching only for secrets or intentional takeover.
+
 Production warning policy: when the user selects `production`, remind them to be extremely careful with AI-assisted remote operations. AI can misunderstand shell context, stale panes, aliases, credentials, kubeconfigs, current directories, and blast radius. Make clear that the user is responsible for each command they approve.
 
 Production chat approval policy for Codex:
@@ -102,6 +104,7 @@ Prefer the bundled scripts inside this skill directory so the workflow remains s
 - Prefer `send.sh` for interactive programs, commands expected to run for a long time, commands that intentionally change shell state such as `cd` or `export`, and commands with complex quoting.
 - Bound unknown output. Do not dump unknown-size files, logs, or command results unless the user explicitly asks for full output.
 - Prefer limited reads: `sed -n '1,120p' file`, `tail -n 100`, keyword/time filters, `journalctl -n --no-pager`, `docker logs --tail`, or `kubectl logs --tail`; check `ls -lh`/`wc` only when full content is needed.
+- For complex multi-step checks, prefer a temporary script in non-production instead of fragile deeply nested one-liners; use `/tmp`, bounded output, and clean it up.
 - Avoid full-screen TUI programs such as `vim`, `nano`, `less`, `top`, `htop`, and `watch`; use bounded non-interactive commands instead, or ask the user to handle the TUI and report when it is ready.
 - When the pane is inside an inner interactive environment such as MySQL, Spark shell, psql, Python, a pod shell, or an SSH session waiting at a prompt, do not wrap the next command with `run.sh`. Send one REPL command with `send.sh`, then poll with `read.sh`. For MySQL, prefer `\g` as the statement terminator or ensure `send.sh` sends the text literally before pressing Enter.
 - If `run.sh` refuses because it detected an interactive prompt, use `send.sh`; do not disable the detector unless the user explicitly asks.
