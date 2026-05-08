@@ -1,8 +1,8 @@
 # tmux-remote-linux
 
-`tmux-remote-linux` lets Codex, Claude Code, Gemini CLI, or another AI coding tool operate a remote Linux shell through a local `tmux` pane that you already control.
+Some projects cannot be tested from a developer laptop. The code is local, but the meaningful validation happens behind bastion hosts, MFA, jump scripts, private kubeconfigs, internal datasets, or Kubernetes clusters.
 
-It is useful when you have already logged in through SSH, a bastion host, MFA, VPN, root switching, or a prepared kubeconfig. The AI tool does not need your credentials and does not open its own remote connection. It only reads and writes the tmux pane you point it at.
+`tmux-remote-linux` closes that loop through a `tmux` pane you already control. You log in and prepare the shell yourself; Codex, Claude Code, Gemini CLI, or another AI coding agent only reads and writes that pane.
 
 This skill is designed for reliable shell operations, not full terminal interactivity. Do not hand the pane to an agent while it is inside a REPL or full-screen TUI such as MySQL, Redis, Python, Node, Spark shell, `vim`, `less`, or `top`.
 

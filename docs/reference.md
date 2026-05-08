@@ -4,7 +4,11 @@ This is the full reference manual. For the short setup path, start with [../READ
 
 `tmux-remote-linux` 是一个用于 AI 编程工具的小型 skill。它通过用户本地已经打开的 tmux pane 操作远程 Linux shell。
 
-这个工具适合这样的场景：用户已经手动完成了堡垒机登录、MFA、SSH 跳转、内网访问、切换 root、选择 kubeconfig 等准备工作。Codex 不需要拿到凭据，也不需要自己重新建立 SSH 连接，只通过 tmux pane 读取输出、发送命令、汇总结果。
+有些项目无法在开发者本机完成有效验证。代码在本地，但真正有意义的测试、诊断和确认发生在受限的远端环境里：堡垒机、MFA、跳转脚本、共享机器、私有 kubeconfig、内部数据集，或者本机无法直连的 Kubernetes 集群。
+
+这个工具适合两类典型场景。第一类是远端验证：用户已经手动完成 SSH 登录、切换用户、选择 kubeconfig、准备环境变量等初始化，agent 可以在这个上下文里运行检查命令、测试命令或部署后的验证命令。第二类是线上排障：用户控制进入路径和敏感输入，agent 负责在已授权的终端里读取状态、执行有限命令、分析日志和汇总结论。
+
+Codex 不需要拿到凭据，也不需要自己重新建立 SSH 连接。用户自己登录并准备好 shell；agent 只通过 tmux pane 读取输出、发送命令、汇总结果。
 
 这个项目的目标是**稳妥地代理普通 shell 操作**，不是完整模拟人类使用终端。它有意不追求高交互式命令行和全屏 TUI 的全面支持。
 

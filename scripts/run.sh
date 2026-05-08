@@ -63,7 +63,7 @@ detect_interactive_prompt() {
       cat >&2 <<EOF
 [run.sh] interactive prompt detected; refusing to wrap input in a child bash.
 [run.sh] last prompt: ${last_line}
-[run.sh] Use send.sh for the REPL input, then read.sh to inspect the result.
+[run.sh] REPL-style interactive input is not supported. Exit or handle the REPL manually, or use a one-shot non-interactive command such as mysql -e, redis-cli <command>, python -c, or node -e.
 EOF
       exit 5
       ;;
