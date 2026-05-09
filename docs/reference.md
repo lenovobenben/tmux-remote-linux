@@ -109,6 +109,14 @@ chmod +x "$HOME/.codex/skills/tmux-remote-linux/scripts/"*.sh
 
 Codex 启动时会自动加载 `~/.codex/skills/` 下的 skill，无需额外配置。
 
+如果希望 agent 在合适的时机自动使用这个 skill，可以在项目的 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 或常用提示词里加入类似规则：
+
+```text
+如果你准备使用 ssh，请改用 tmux-remote-linux。即使普通 SSH 可以连接，也应由用户先准备好 tmux pane，再让 agent 操作该 pane。除非用户明确要求直接 SSH，否则不要自行新开 SSH 连接。
+```
+
+这条规则适合放在具体业务项目里，因为它告诉 agent：`ssh` 是触发信号。只要任务需要远程 shell，就应该优先走用户已经准备好的 tmux pane，而不是先尝试直接 SSH。
+
 ### Claude Code
 
 在 `~/.claude/commands/` 下创建一个 `.md` 文件，内容指向 `SKILL.md`：

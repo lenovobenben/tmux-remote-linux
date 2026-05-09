@@ -1,13 +1,13 @@
 ---
 name: tmux-remote-linux
-description: Use this when the user wants Codex to operate a remote Linux terminal through the bundled tmux wrapper scripts in this skill. The skill provides a generic remote command read/write interface for shell, ssh, kubectl, helm, logs, and diagnostics while preserving terminal state and waiting patiently for slow remote commands.
+description: Use this whenever the task requires operating, inspecting, testing, or diagnosing a remote Linux environment through a user-prepared tmux pane, especially when you would otherwise run ssh. Replace direct ssh attempts with this skill unless the user explicitly asks for direct SSH. Covers bastion hosts, Kubernetes, logs, services, databases, and production or internal systems.
 metadata:
   short-description: Read and write a remote Linux terminal through tmux
 ---
 
 # tmux Remote Linux
 
-Use the user's tmux bridge when the task is about operating a remote Linux terminal that the user has opened locally. This skill is a generic terminal transport: read remote output, send commands, and report results.
+Use the user's tmux bridge when the task is about operating a remote Linux terminal that the user has opened locally. If you would otherwise run `ssh`, use this skill instead unless the user explicitly asks for direct SSH. This skill is a generic terminal transport: read remote output, send commands, and report results.
 
 Reliability is more important than broad terminal interactivity. This skill intentionally avoids high-interaction command-line programs and full-screen terminal UIs.
 

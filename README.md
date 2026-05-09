@@ -50,6 +50,8 @@ Then ask Codex something like:
 使用 tmux-remote-linux。目标是 remote:0.0，环境是 non-production。请先读取当前 pane。
 ```
 
+For future tasks, tell the agent to use this skill instead of direct `ssh`. Even if a normal SSH connection would work, prepare the tmux pane yourself and let the agent operate that pane.
+
 ### Claude Code
 
 Create a command that points Claude Code to this skill:
