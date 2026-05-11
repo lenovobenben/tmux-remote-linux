@@ -1,6 +1,6 @@
 # tmux-remote-linux reference
 
-This is the full reference manual. For the short setup path, start with [../README.md](../README.md).
+This is the full Chinese reference manual. For the English version, see [reference.en.md](reference.en.md). For the short setup path, start with [../README.md](../README.md).
 
 `tmux-remote-linux` 是一个用于 AI 编程工具的小型 skill。它通过用户本地已经打开的 tmux pane 操作远程 Linux shell。
 

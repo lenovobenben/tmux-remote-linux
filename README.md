@@ -6,7 +6,7 @@ Some projects cannot be tested from a developer laptop. The code is local, but t
 
 This skill is designed for reliable shell operations, not full terminal interactivity. Do not hand the pane to an agent while it is inside a REPL or full-screen TUI such as MySQL, Redis, Python, Node, Spark shell, `vim`, `less`, or `top`.
 
-For the full manual, configuration reference, and troubleshooting notes, see [docs/reference.md](docs/reference.md).
+For the full manual, configuration reference, and troubleshooting notes, see [docs/reference.en.md](docs/reference.en.md). A Chinese version is available at [docs/reference.zh-CN.md](docs/reference.zh-CN.md).
 
 ## Platform Notes
 
@@ -126,4 +126,4 @@ REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=80
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=20
 ```
 
-See [docs/reference.md](docs/reference.md) for all settings and edge cases.
+See [docs/reference.en.md](docs/reference.en.md) for all settings and edge cases.
