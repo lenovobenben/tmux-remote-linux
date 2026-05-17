@@ -18,9 +18,14 @@ fi
 if [ "$filter_wrapper" = "0" ]; then
   tmux capture-pane -t "$target" -p -S "-$lines"
 else
-  tmux capture-pane -t "$target" -p -S "-$lines" | awk '
+  tmux capture-pane -J -t "$target" -p -S "-$lines" | awk '
     /__CODEX_RUN_[0-9]+_[0-9]+_(BEGIN|END)__(:[0-9]+)?/ { next }
     /__CODEX_RUN_[0-9]+_[0-9]+/ && /base64 -d[[:space:]]*\|[[:space:]]*bash/ && /__codex_status/ { next }
+    /export HISTCONTROL=ignoreboth:erasedups/ && /base64 -d[[:space:]]*\|[[:space:]]*HISTFILE=\/dev\/null/ { next }
+    /base64 -d[[:space:]]*\|[[:space:]]*HISTFILE=\/dev\/null/ { next }
+    /export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>\/dev\/null \|\| true; / {
+      sub(/export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>\/dev\/null \|\| true; /, "")
+    }
     { print }
   '
 fi

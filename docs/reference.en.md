@@ -32,6 +32,7 @@ The scripts are intentionally small. They do not manage SSH keys, bastion sessio
 - `scripts/send.sh`: send one command and press Enter.
 - `scripts/run.sh`: run one short command, use begin/end markers to capture only this command's output, and propagate the remote exit code.
 - `scripts/env_guard.sh`: shared environment-selection and production-approval guard logic.
+- `scripts/log.sh`: shared local JSONL audit logging helpers.
 - `SKILL.md`: safety and operating instructions for AI tools.
 
 ## Dependencies
@@ -286,6 +287,8 @@ Use `read.sh` to confirm the current prompt, host, directory, foreground program
 
 Use `send.sh` for commands that change the current interactive shell state, such as `cd`, `export`, or `sudo -i`; it is also suitable for long-running shell commands and follow-up operations after the user manually enters a password. Because it directly acts on the current pane, confirm the current prompt and context before sending.
 
+By default, `send.sh` writes a local JSONL audit event with the decoded command, target, environment, and send time. The event has `exit_code: null` and `output: null` because `send.sh` does not wait for command completion.
+
 `send.sh` does not promise support for REPL-style interactive CLIs such as MySQL, Redis, Spark shell, psql, Python, or Node. Prefer one-shot non-interactive commands such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`. If the pane is already inside a REPL, the agent should report the state and ask the user to exit or handle it manually.
 
 ### `run.sh`
@@ -301,6 +304,14 @@ base64 -d | bash
 It then records the remote exit code and prints the end marker and exit code. `run.sh` finds the begin/end markers in recent pane output, returns only this command's output, and prints `[exit N]`. The local script exits with the same code.
 
 Commands are transferred through base64 to reduce issues with nested quotes, pipes, semicolons, and multiple shell-escaping layers. The command runs in a child remote `bash`, so `exit 7` only exits the child process and does not close the current interactive shell. It also means state changes such as `cd` and `export` do not persist after the command finishes.
+
+By default, `run.sh` writes a local JSONL audit event with the decoded command, target, environment, start time, end time, duration, exit code, and a truncated copy of the captured output.
+
+### Remote History Noise Reduction
+
+By default, commands sent to tmux are prefixed with shell history settings and a leading space. For bash, the wrapper sets `HISTCONTROL=ignoreboth:erasedups`; for zsh, it attempts `setopt HIST_IGNORE_SPACE`. `run.sh` also executes its transport wrapper inside a child `bash` with `HISTFILE=/dev/null`.
+
+This is meant to keep long AI-generated wrapper commands out of ordinary interactive shell history, especially base64 transport lines and failed retries. It is not a security boundary and does not attempt to bypass terminal recording, bastion auditing, system audit logs, or provider session logs.
 
 ### State Boundaries
 
@@ -321,6 +332,11 @@ REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40
 REMOTE_TMUX_DETECT_INTERACTIVE=1
+REMOTE_TMUX_AVOID_REMOTE_HISTORY=1
+REMOTE_TMUX_LOG_ENABLED=1
+REMOTE_TMUX_LOG_DIR="$HOME/.codex/tmux-remote-linux/logs"
+REMOTE_TMUX_LOG_MAX_OUTPUT_LINES=10
+REMOTE_TMUX_LOG_RETENTION_DAYS=7
 REMOTE_TMUX_COMMAND_EXPLANATION='Explain what this production command will do'
 REMOTE_TMUX_PROD_APPROVAL_EXPECTED_DIGIT=7
 REMOTE_TMUX_PROD_APPROVAL_DIGIT=7
@@ -369,6 +385,26 @@ If `run.sh` finds the begin marker but not the end marker, it prints at most thi
 
 When set to `1`, `run.sh` refuses to execute if the pane appears to be inside a child interactive CLI such as MySQL, psql, Python, Spark shell, redis-cli, mongo shell, or sqlite. Default: `1`.
 
+### `REMOTE_TMUX_AVOID_REMOTE_HISTORY`
+
+When set to `1`, `send.sh` and `run.sh` prefix sent commands with history-ignore settings and a leading space to reduce pollution in the remote interactive shell history. Default: `1`.
+
+### `REMOTE_TMUX_LOG_ENABLED`
+
+Whether `send.sh` and `run.sh` write local JSONL audit logs. Default: `1`. Set to `0` to disable local audit logging.
+
+### `REMOTE_TMUX_LOG_DIR`
+
+Local directory for audit logs. Default: `$HOME/.codex/tmux-remote-linux/logs`. Logs are written as one JSONL file per local day, for example `2026-05-17.jsonl`.
+
+### `REMOTE_TMUX_LOG_MAX_OUTPUT_LINES`
+
+Maximum number of command output lines stored in each `run.sh` audit event. Default: `10`. This does not affect how many lines `run.sh` prints to the caller; that is controlled by `REMOTE_TMUX_RUN_MAX_OUTPUT_LINES`.
+
+### `REMOTE_TMUX_LOG_RETENTION_DAYS`
+
+How long local `*.jsonl` audit log files are retained. Default: `7`. Cleanup runs opportunistically when a new log event is written.
+
 ### `REMOTE_TMUX_COMMAND_EXPLANATION`
 
 Optional for non-production. Required for non-interactive production approval. This should explain in user-friendly language what the command will do and why it is needed.
@@ -402,6 +438,7 @@ REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200    # maximum output lines printed by run.sh
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768  # maximum output bytes printed by run.sh
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40 # maximum tail lines while a command is still running
 REMOTE_TMUX_FILTER_WRAPPER=1            # filter obvious wrapper and marker lines
+REMOTE_TMUX_LOG_MAX_OUTPUT_LINES=10     # maximum output lines stored in local audit logs
 ```
 
 For daily inspection, you can reduce `REMOTE_TMUX_LINES`, `REMOTE_TMUX_RUN_MAX_OUTPUT_LINES`, and `REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES`. Temporarily increase them only while diagnosing complex issues, so unrelated history does not enter the agent context.
@@ -425,6 +462,8 @@ scripts/send.sh 'tail -f /var/log/app.log'
 ```
 
 `run.sh` executes commands in a child remote `bash` process. Therefore `cd`, `export`, and similar shell state changes do not persist after the command exits. Use `send.sh` when state must persist.
+
+As a soft audit policy, prefer `run.sh` when command results need to be recorded, and prefer `send.sh` for changing directory, setting environment, starting long-running work, or handing control back to the user. This is guidance, not a hard restriction.
 
 Agents do not operate REPL-style interactive CLIs through this skill. Typical examples include `mysql>`, `redis-cli`, `psql>`, `spark-shell>`, Python REPL, Node REPL, attached container shells, or any prompt where state lives inside the current interactive program. Use non-interactive commands instead, such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`. If the pane is already inside a REPL, the user should exit or handle it manually before the agent continues.
 
@@ -497,23 +536,25 @@ High-risk commands require extra care, including but not limited to:
 - `terraform apply`, `terraform destroy`
 - firewall, routing, reboot, shutdown, database migration, and data deletion commands
 
-## Future: Audit Logs
+## Audit Logs
 
-Audit logging is valuable but not implemented yet. The project currently relies on tmux scrollback, the agent conversation, and the user's own operation records. If the agent exits, the tmux session closes, or scrollback is overwritten, later review may be unreliable.
+`send.sh` and `run.sh` write local append-only JSONL audit logs by default. The default directory is:
 
-A future version may add a local append-only audit log to record commands sent through `send.sh` / `run.sh`, target pane, environment, timestamp, production approval explanation, exit code, and output summaries captured by `run.sh`. JSONL is a good candidate format because it would support future query, filtering, summary, and risk-analysis tools.
+```bash
+$HOME/.codex/tmux-remote-linux/logs
+```
 
-The key value of audit logs is not merely "recording everything"; it is "how to query it later". Before query tools and usage patterns are clear, it is better not to freeze the log format and fields too early.
+Files are split by local date:
 
-Design also needs to handle these boundaries:
+```text
+2026-05-17.jsonl
+```
 
-- `run.sh` can record command output and exit code; `send.sh` can usually record only what was sent, not necessarily the later output or exit code.
-- Passwords, MFA codes, tokens, and other sensitive user-entered content should not be recorded by the agent.
-- Audit logs may themselves contain sensitive commands, production output, business data, or connection details, so they should be treated as local sensitive files with strict permissions.
-- Large output should not be written fully into the main log; record summaries, truncated content, or put detailed output into separate files.
-- Concurrent writes from multiple agents, panes, and sessions need fields such as request id / run id / target for attribution.
+`run.sh` records the decoded command, target pane, environment, start time, end time, duration, exit code, and captured output truncated to `REMOTE_TMUX_LOG_MAX_OUTPUT_LINES`. `send.sh` records the decoded command, target pane, environment, and send time, but uses `exit_code: null` and `output: null` because it does not wait for completion.
 
-This feature should wait until query needs are clearer. The current document records the design direction only; existing scripts do not provide audit logging.
+Audit logs are local sensitive files. They may contain production commands, host names, business output, or error details. User-entered passwords, MFA codes, and secrets typed directly into the pane are not captured by these scripts, but command text and output may still contain sensitive data.
+
+Old `*.jsonl` files are deleted after `REMOTE_TMUX_LOG_RETENTION_DAYS` days. Cleanup is opportunistic and runs when a new log event is written.
 
 ## FAQ
 

@@ -4,6 +4,8 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/env_guard.sh
 source "$script_dir/env_guard.sh"
+# shellcheck source=scripts/log.sh
+source "$script_dir/log.sh"
 remote_tmux_require_environment
 
 target="${REMOTE_TMUX_TARGET:-remote:0.0}"
@@ -13,6 +15,7 @@ max_output_lines="${REMOTE_TMUX_RUN_MAX_OUTPUT_LINES:-200}"
 max_output_bytes="${REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES:-32768}"
 pending_output_lines="${REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES:-40}"
 detect_interactive="${REMOTE_TMUX_DETECT_INTERACTIVE:-1}"
+avoid_remote_history="${REMOTE_TMUX_AVOID_REMOTE_HISTORY:-1}"
 
 if [ "$#" -lt 1 ]; then
   echo "usage: $0 '<command>'" >&2
@@ -49,6 +52,17 @@ limit_output() {
       }
     }
   '
+}
+
+send_remote_command() {
+  local command_to_send="$1"
+
+  if [ "$avoid_remote_history" = "0" ]; then
+    tmux send-keys -t "$target" -l -- "$command_to_send"
+  else
+    tmux send-keys -t "$target" -l -- " export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>/dev/null || true; $command_to_send"
+  fi
+  tmux send-keys -t "$target" Enter
 }
 
 detect_interactive_prompt() {
@@ -100,24 +114,30 @@ remote_tmux_confirm_if_production "$command_text"
 marker="CODEX_RUN_$(date +%s)_$$"
 begin="__${marker}_BEGIN__"
 end="__${marker}_END__"
+started_at="$(remote_tmux_log_now)"
+started_ms="$(remote_tmux_log_epoch_ms)"
 
 encoded_command="$(printf '%s' "$command_text" | base64 | tr -d '\n')"
-remote_command="printf '\n%s\n' '$begin'; printf '%s' '$encoded_command' | base64 -d | bash; __codex_status=\$?; printf '\n%s:%s\n' '$end' \"\$__codex_status\""
+inner_command="printf '\n%s\n' '$begin'; printf '%s' '$encoded_command' | base64 -d | bash; __codex_status=\$?; printf '\n%s:%s\n' '$end' \"\$__codex_status\""
+encoded_inner_command="$(printf '%s' "$inner_command" | base64 | tr -d '\n')"
+remote_command="printf '%s' '$encoded_inner_command' | base64 -d | HISTFILE=/dev/null HISTCONTROL=ignorespace:ignoredups bash"
 
-tmux send-keys -t "$target" -l -- "$remote_command"
-tmux send-keys -t "$target" Enter
+send_remote_command "$remote_command"
 sleep "$wait_seconds"
 
 captured="$(tmux capture-pane -t "$target" -p -S "-$capture_lines")"
 
 if ! printf '%s\n' "$captured" | grep -Fxq "$begin"; then
+  ended_at="$(remote_tmux_log_now)"
+  ended_ms="$(remote_tmux_log_epoch_ms)"
+  remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "begin_not_found" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
   echo "[run.sh] begin marker not found yet: $begin" >&2
   echo "[run.sh] not printing pane history; use read.sh 40 if you need to inspect the current pane" >&2
   exit 124
 fi
 
 if ! printf '%s\n' "$captured" | grep -q "^${end}:"; then
-  printf '%s\n' "$captured" | awk -v begin="$begin" -v max_lines="$pending_output_lines" '
+  pending_output="$(printf '%s\n' "$captured" | awk -v begin="$begin" -v max_lines="$pending_output_lines" '
     $0 == begin { seen = 1; next }
     seen {
       lines[++count] = $0
@@ -131,12 +151,19 @@ if ! printf '%s\n' "$captured" | grep -q "^${end}:"; then
         print lines[i]
       }
     }
-  ' | limit_output
+  ')"
+  limited_pending_output="$(printf '%s' "$pending_output" | limit_output)"
+  if [ -n "$limited_pending_output" ]; then
+    printf '%s\n' "$limited_pending_output"
+  fi
+  ended_at="$(remote_tmux_log_now)"
+  ended_ms="$(remote_tmux_log_epoch_ms)"
+  remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "pending" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 "$pending_output"
   echo "[run.sh] end marker not found yet; command may still be running" >&2
   exit 124
 fi
 
-printf '%s\n' "$captured" | awk -v begin="$begin" -v end="$end" '
+command_output="$(printf '%s\n' "$captured" | awk -v begin="$begin" -v end="$end" '
   $0 == begin { seen = 1; next }
   seen && index($0, end ":") == 1 {
     done = 1
@@ -152,7 +179,11 @@ printf '%s\n' "$captured" | awk -v begin="$begin" -v end="$end" '
       exit 124
     }
   }
-' | limit_output
+')"
+limited_command_output="$(printf '%s' "$command_output" | limit_output)"
+if [ -n "$limited_command_output" ]; then
+  printf '%s\n' "$limited_command_output"
+fi
 
 remote_status="$(printf '%s\n' "$captured" | awk -v end="$end" '
   index($0, end ":") == 1 {
@@ -165,5 +196,14 @@ remote_status="$(printf '%s\n' "$captured" | awk -v end="$end" '
 
 if [[ "$remote_status" =~ ^[0-9]+$ ]]; then
   echo "[exit $remote_status]"
+  ended_at="$(remote_tmux_log_now)"
+  ended_ms="$(remote_tmux_log_epoch_ms)"
+  remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "completed" "$started_at" "$ended_at" "$((ended_ms - started_ms))" "$remote_status" "$command_output"
   exit "$remote_status"
 fi
+
+ended_at="$(remote_tmux_log_now)"
+ended_ms="$(remote_tmux_log_epoch_ms)"
+remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "exit_parse_error" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 1 "$command_output"
+echo "[run.sh] unable to parse remote exit status" >&2
+exit 1

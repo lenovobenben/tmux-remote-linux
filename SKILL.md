@@ -92,7 +92,16 @@ REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40
 REMOTE_TMUX_DETECT_INTERACTIVE=1
+REMOTE_TMUX_AVOID_REMOTE_HISTORY=1
+REMOTE_TMUX_LOG_ENABLED=1
+REMOTE_TMUX_LOG_DIR="$HOME/.codex/tmux-remote-linux/logs"
+REMOTE_TMUX_LOG_MAX_OUTPUT_LINES=10
+REMOTE_TMUX_LOG_RETENTION_DAYS=7
 ```
+
+By default, `run.sh` and `send.sh` reduce remote shell history noise by prefixing sent commands with history-ignore settings and a leading space. This is meant to keep AI-generated wrapper commands out of ordinary `bash_history` / zsh history; it is not a security boundary.
+
+By default, `run.sh` and `send.sh` write local JSONL audit logs under `REMOTE_TMUX_LOG_DIR`. `run.sh` records the decoded command, start/end time, exit code, and captured output truncated to `REMOTE_TMUX_LOG_MAX_OUTPUT_LINES`; `send.sh` records that input was sent but cannot know the later exit code or output.
 
 If sandbox blocks tmux socket access, rerun the read/send/run command with escalation.
 
@@ -104,6 +113,7 @@ Prefer the bundled scripts inside this skill directory so the workflow remains s
 - Treat the tmux pane as shared state. The current prompt, cwd, active kubeconfig, and any running foreground command matter.
 - Prefer `run.sh` for short, non-interactive inspection commands because it gives a scoped output and exit code.
 - Prefer `send.sh` for commands expected to run for a long time, commands that intentionally change shell state such as `cd` or `export`, and commands with complex quoting.
+- As a soft policy, prefer `run.sh` when command results need an audit trail, and prefer `send.sh` for changing directory, setting environment, starting long-running work, or handing control back to the user. This is guidance, not a hard restriction.
 - The managed pane must not enter agent control while it is inside an interactive CLI, REPL, or TUI. If it is already in one, stop and ask the user to exit or handle it manually before continuing.
 - Interactive CLIs and REPLs are not supported. Do not operate MySQL, Redis, Spark shell, psql, Python, Node, or similar prompts by sending REPL input. Prefer one-shot non-interactive commands such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`.
 - Bound unknown output. Do not dump unknown-size files, logs, or command results unless the user explicitly asks for full output.

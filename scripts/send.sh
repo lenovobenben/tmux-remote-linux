@@ -4,9 +4,12 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/env_guard.sh
 source "$script_dir/env_guard.sh"
+# shellcheck source=scripts/log.sh
+source "$script_dir/log.sh"
 remote_tmux_require_environment
 
 target="${REMOTE_TMUX_TARGET:-remote:0.0}"
+avoid_remote_history="${REMOTE_TMUX_AVOID_REMOTE_HISTORY:-1}"
 
 if [ "$#" -lt 1 ]; then
   echo "usage: $0 '<command>'" >&2
@@ -14,5 +17,10 @@ if [ "$#" -lt 1 ]; then
 fi
 
 remote_tmux_confirm_if_production "$1"
-tmux send-keys -t "$target" -l -- "$1"
+if [ "$avoid_remote_history" = "0" ]; then
+  tmux send-keys -t "$target" -l -- "$1"
+else
+  tmux send-keys -t "$target" -l -- " export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>/dev/null || true; $1"
+fi
 tmux send-keys -t "$target" Enter
+remote_tmux_log_send_event "send.sh" "$target" "$REMOTE_TMUX_ENV" "$1" "$(remote_tmux_log_now)"

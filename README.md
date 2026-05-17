@@ -89,6 +89,7 @@ Most users only need to remember three things:
 - Default target: `remote:0.0`
 - You must choose an environment: `production` or `non-production`
 - Short checks use `run.sh`; `cd`, `export`, and long-running shell commands use `send.sh`; REPL-style CLIs are not supported
+- Commands sent by `run.sh` and `send.sh` are logged locally as JSONL under `~/.codex/tmux-remote-linux/logs` by default; `run.sh` records output and exit code, while `send.sh` records only that input was sent.
 
 **Treat the target tmux pane as agent-managed.** Avoid typing your own commands into the same pane while the AI is using it. If you need manual work, open another terminal, pane, or session, or ask the agent to run the command. If you did change the managed pane manually, tell the agent what changed before asking it to continue.
 
@@ -124,6 +125,7 @@ If output gets large, ask the AI to read fewer pane lines, use `tail -n`, narrow
 REMOTE_TMUX_LINES=20
 REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=80
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=20
+REMOTE_TMUX_LOG_MAX_OUTPUT_LINES=10
 ```
 
 See [docs/reference.en.md](docs/reference.en.md) for all settings and edge cases.
