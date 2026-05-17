@@ -25,6 +25,7 @@ else
     /base64 -d[[:space:]]*\|[[:space:]]*HISTFILE=\/dev\/null/ { next }
     /export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>\/dev\/null \|\| true; / {
       sub(/export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>\/dev\/null \|\| true; /, "")
+      sub(/; __tmux_remote_hist_id=\$\(HISTTIMEFORMAT= history 1 2>\/dev\/null \| awk '\''\{print \$1\}'\''\); \[ -n "\$__tmux_remote_hist_id" \] && history -d "\$__tmux_remote_hist_id" 2>\/dev\/null \|\| true; unset __tmux_remote_hist_id/, "")
     }
     { print }
   '

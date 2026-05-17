@@ -60,7 +60,7 @@ send_remote_command() {
   if [ "$avoid_remote_history" = "0" ]; then
     tmux send-keys -t "$target" -l -- "$command_to_send"
   else
-    tmux send-keys -t "$target" -l -- " export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>/dev/null || true; $command_to_send"
+    tmux send-keys -t "$target" -l -- " export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>/dev/null || true; $command_to_send; __tmux_remote_hist_id=\$(HISTTIMEFORMAT= history 1 2>/dev/null | awk '{print \$1}'); [ -n \"\$__tmux_remote_hist_id\" ] && history -d \"\$__tmux_remote_hist_id\" 2>/dev/null || true; unset __tmux_remote_hist_id"
   fi
   tmux send-keys -t "$target" Enter
 }

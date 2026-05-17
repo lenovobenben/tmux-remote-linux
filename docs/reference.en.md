@@ -309,7 +309,7 @@ By default, `run.sh` writes a local JSONL audit event with the decoded command, 
 
 ### Remote History Noise Reduction
 
-By default, commands sent to tmux are prefixed with shell history settings and a leading space. For bash, the wrapper sets `HISTCONTROL=ignoreboth:erasedups`; for zsh, it attempts `setopt HIST_IGNORE_SPACE`. `run.sh` also executes its transport wrapper inside a child `bash` with `HISTFILE=/dev/null`.
+By default, commands sent to tmux are prefixed with shell history settings and a leading space. For bash, the wrapper sets `HISTCONTROL=ignoreboth:erasedups`; for zsh, it attempts `setopt HIST_IGNORE_SPACE`. After the sent command completes, the wrapper also tries to delete the just-sent history entry from the interactive shell. `run.sh` additionally executes its transport wrapper inside a child `bash` with `HISTFILE=/dev/null`.
 
 This is meant to keep long AI-generated wrapper commands out of ordinary interactive shell history, especially base64 transport lines and failed retries. It is not a security boundary and does not attempt to bypass terminal recording, bastion auditing, system audit logs, or provider session logs.
 
@@ -387,7 +387,7 @@ When set to `1`, `run.sh` refuses to execute if the pane appears to be inside a 
 
 ### `REMOTE_TMUX_AVOID_REMOTE_HISTORY`
 
-When set to `1`, `send.sh` and `run.sh` prefix sent commands with history-ignore settings and a leading space to reduce pollution in the remote interactive shell history. Default: `1`.
+When set to `1`, `send.sh` and `run.sh` prefix sent commands with history-ignore settings and a leading space, then try to delete the just-sent history entry from the interactive shell. This reduces pollution in the remote interactive shell history. Default: `1`.
 
 ### `REMOTE_TMUX_LOG_ENABLED`
 

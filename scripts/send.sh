@@ -20,7 +20,7 @@ remote_tmux_confirm_if_production "$1"
 if [ "$avoid_remote_history" = "0" ]; then
   tmux send-keys -t "$target" -l -- "$1"
 else
-  tmux send-keys -t "$target" -l -- " export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>/dev/null || true; $1"
+  tmux send-keys -t "$target" -l -- " export HISTCONTROL=ignoreboth:erasedups; setopt HIST_IGNORE_SPACE 2>/dev/null || true; $1; __tmux_remote_hist_id=\$(HISTTIMEFORMAT= history 1 2>/dev/null | awk '{print \$1}'); [ -n \"\$__tmux_remote_hist_id\" ] && history -d \"\$__tmux_remote_hist_id\" 2>/dev/null || true; unset __tmux_remote_hist_id"
 fi
 tmux send-keys -t "$target" Enter
 remote_tmux_log_send_event "send.sh" "$target" "$REMOTE_TMUX_ENV" "$1" "$(remote_tmux_log_now)"

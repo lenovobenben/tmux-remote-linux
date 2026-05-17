@@ -99,7 +99,7 @@ REMOTE_TMUX_LOG_MAX_OUTPUT_LINES=10
 REMOTE_TMUX_LOG_RETENTION_DAYS=7
 ```
 
-By default, `run.sh` and `send.sh` reduce remote shell history noise by prefixing sent commands with history-ignore settings and a leading space. This is meant to keep AI-generated wrapper commands out of ordinary `bash_history` / zsh history; it is not a security boundary.
+By default, `run.sh` and `send.sh` reduce remote shell history noise by prefixing sent commands with history-ignore settings and a leading space, then deleting the just-sent history entry from the interactive shell when possible. This is meant to keep AI-generated wrapper commands out of ordinary `bash_history` / zsh history; it is not a security boundary.
 
 By default, `run.sh` and `send.sh` write local JSONL audit logs under `REMOTE_TMUX_LOG_DIR`. `run.sh` records the decoded command, start/end time, exit code, and captured output truncated to `REMOTE_TMUX_LOG_MAX_OUTPUT_LINES`; `send.sh` records that input was sent but cannot know the later exit code or output.
 

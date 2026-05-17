@@ -309,7 +309,7 @@ base64 -d | bash
 
 ### 远端 history 减噪
 
-默认情况下，发送到 tmux 的命令会带上 shell history 设置和前导空格。对 bash，wrapper 会设置 `HISTCONTROL=ignoreboth:erasedups`；对 zsh，会尝试执行 `setopt HIST_IGNORE_SPACE`。`run.sh` 还会把传输 wrapper 放到 `HISTFILE=/dev/null` 的子 `bash` 里执行。
+默认情况下，发送到 tmux 的命令会带上 shell history 设置和前导空格。对 bash，wrapper 会设置 `HISTCONTROL=ignoreboth:erasedups`；对 zsh，会尝试执行 `setopt HIST_IGNORE_SPACE`。发送的命令执行完成后，wrapper 还会尽量从交互 shell history 中删除刚刚发送的这一条记录。`run.sh` 还会把传输 wrapper 放到 `HISTFILE=/dev/null` 的子 `bash` 里执行。
 
 这个机制的目标是减少普通交互 shell history 里的噪音，尤其是 AI 生成的超长 base64 wrapper 和试错命令。它不是安全边界，也不尝试绕过终端录屏、堡垒机审计、系统 audit 日志或云厂商会话日志。
 
@@ -387,7 +387,7 @@ REMOTE_TMUX_PROD_APPROVAL_DIGIT=7
 
 ### `REMOTE_TMUX_AVOID_REMOTE_HISTORY`
 
-设置为 `1` 时，`send.sh` 和 `run.sh` 会在发送命令前加 history 忽略设置和前导空格，减少远端交互 shell history 污染。默认 `1`。
+设置为 `1` 时，`send.sh` 和 `run.sh` 会在发送命令前加 history 忽略设置和前导空格，并在命令结束后尽量从交互 shell history 中删除刚刚发送的这一条记录，减少远端交互 shell history 污染。默认 `1`。
 
 ### `REMOTE_TMUX_LOG_ENABLED`
 
