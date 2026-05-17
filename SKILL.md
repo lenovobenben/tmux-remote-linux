@@ -80,6 +80,16 @@ $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh '<command>'
 
 Important: `run.sh` always starts a fresh non-interactive `bash` child. Do not use it to query or control state that only exists inside the current interactive program, such as `mysql>`, `redis-cli`, `spark-shell>`, `psql>`, a Python REPL, a Node REPL, an attached container shell, or shell in-memory history. Use `read.sh` to identify and report the current prompt, then ask the user to exit or handle that REPL manually.
 
+- Query local JSONL audit logs:
+
+```bash
+$HOME/.codex/skills/tmux-remote-linux/scripts/logs.sh last 10
+$HOME/.codex/skills/tmux-remote-linux/scripts/logs.sh failures
+$HOME/.codex/skills/tmux-remote-linux/scripts/logs.sh show <request_id>
+```
+
+`logs.sh` requires local `jq`.
+
 Useful optional environment variables:
 
 ```bash
@@ -97,11 +107,14 @@ REMOTE_TMUX_LOG_ENABLED=1
 REMOTE_TMUX_LOG_DIR="$HOME/.codex/tmux-remote-linux/logs"
 REMOTE_TMUX_LOG_MAX_OUTPUT_LINES=10
 REMOTE_TMUX_LOG_RETENTION_DAYS=7
+REMOTE_TMUX_REQUEST_ID=<optional-stable-id>
 ```
 
 By default, `run.sh` and `send.sh` reduce remote shell history noise by prefixing sent commands with history-ignore settings and a leading space, then deleting the just-sent history entry from the interactive shell when possible. This is meant to keep AI-generated wrapper commands out of ordinary `bash_history` / zsh history; it is not a security boundary.
 
 By default, `run.sh` and `send.sh` write local JSONL audit logs under `REMOTE_TMUX_LOG_DIR`. `run.sh` records the decoded command, start/end time, exit code, and captured output truncated to `REMOTE_TMUX_LOG_MAX_OUTPUT_LINES`; `send.sh` records that input was sent but cannot know the later exit code or output.
+
+Each `run.sh` / `send.sh` invocation has a `request_id`. Scripts print `[request_id ...]`, and the same value is written to JSONL. Use `scripts/logs.sh last`, `scripts/logs.sh failures`, `scripts/logs.sh grep <pattern>`, `scripts/logs.sh show <request_id>`, or `scripts/logs.sh output <request_id>` to inspect local logs.
 
 If sandbox blocks tmux socket access, rerun the read/send/run command with escalation.
 

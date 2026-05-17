@@ -102,6 +102,7 @@ EOF
 }
 
 command_text="$1"
+request_id="$(remote_tmux_log_request_id)"
 
 if [ "$detect_interactive" != "0" ]; then
   detect_interactive_prompt
@@ -130,7 +131,7 @@ captured="$(tmux capture-pane -t "$target" -p -S "-$capture_lines")"
 if ! printf '%s\n' "$captured" | grep -Fxq "$begin"; then
   ended_at="$(remote_tmux_log_now)"
   ended_ms="$(remote_tmux_log_epoch_ms)"
-  remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "begin_not_found" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
+  remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "begin_not_found" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
   echo "[run.sh] begin marker not found yet: $begin" >&2
   echo "[run.sh] not printing pane history; use read.sh 40 if you need to inspect the current pane" >&2
   exit 124
@@ -158,7 +159,7 @@ if ! printf '%s\n' "$captured" | grep -q "^${end}:"; then
   fi
   ended_at="$(remote_tmux_log_now)"
   ended_ms="$(remote_tmux_log_epoch_ms)"
-  remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "pending" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 "$pending_output"
+  remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "pending" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 "$pending_output"
   echo "[run.sh] end marker not found yet; command may still be running" >&2
   exit 124
 fi
@@ -195,15 +196,16 @@ remote_status="$(printf '%s\n' "$captured" | awk -v end="$end" '
 ')"
 
 if [[ "$remote_status" =~ ^[0-9]+$ ]]; then
+  echo "[request_id $request_id]"
   echo "[exit $remote_status]"
   ended_at="$(remote_tmux_log_now)"
   ended_ms="$(remote_tmux_log_epoch_ms)"
-  remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "completed" "$started_at" "$ended_at" "$((ended_ms - started_ms))" "$remote_status" "$command_output"
+  remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "completed" "$started_at" "$ended_at" "$((ended_ms - started_ms))" "$remote_status" "$command_output"
   exit "$remote_status"
 fi
 
 ended_at="$(remote_tmux_log_now)"
 ended_ms="$(remote_tmux_log_epoch_ms)"
-remote_tmux_log_run_event "run.sh" "$target" "$REMOTE_TMUX_ENV" "$command_text" "exit_parse_error" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 1 "$command_output"
+remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "exit_parse_error" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 1 "$command_output"
 echo "[run.sh] unable to parse remote exit status" >&2
 exit 1

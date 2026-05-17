@@ -90,6 +90,7 @@ Most users only need to remember three things:
 - You must choose an environment: `production` or `non-production`
 - Short checks use `run.sh`; `cd`, `export`, and long-running shell commands use `send.sh`; REPL-style CLIs are not supported
 - Commands sent by `run.sh` and `send.sh` are logged locally as JSONL under `~/.codex/tmux-remote-linux/logs` by default; `run.sh` records output and exit code, while `send.sh` records only that input was sent.
+- Use `scripts/logs.sh last`, `scripts/logs.sh failures`, `scripts/logs.sh grep <pattern>`, or `scripts/logs.sh show <request_id>` to query local logs.
 
 **Treat the target tmux pane as agent-managed.** Avoid typing your own commands into the same pane while the AI is using it. If you need manual work, open another terminal, pane, or session, or ask the agent to run the command. If you did change the managed pane manually, tell the agent what changed before asking it to continue.
 

@@ -33,6 +33,7 @@ Codex 不需要拿到凭据，也不需要自己重新建立 SSH 连接。用户
 - `scripts/run.sh`：执行一条短命令，使用 begin/end marker 截取本次输出，并传递远端退出码。
 - `scripts/env_guard.sh`：环境选择和生产环境确认的公共保护逻辑。
 - `scripts/log.sh`：本地 JSONL 审计日志的公共辅助逻辑。
+- `scripts/logs.sh`：查询本地 JSONL 审计日志。
 - `SKILL.md`：给 AI 工具使用的安全操作说明。
 
 ## 依赖
@@ -44,6 +45,7 @@ Codex 不需要拿到凭据，也不需要自己重新建立 SSH 连接。用户
 - `tmux`
 - `base64`
 - `awk`、`grep`、`sed`
+- `scripts/logs.sh` 查询审计日志时需要本机有 `jq`
 
 macOS 和 Linux 是主要支持环境。Windows 建议使用 WSL，并把 Codex、Claude Code、Gemini CLI、`tmux` 和这个 skill 都安装在同一个 WSL 发行版里。直接在原生 Windows shell、PowerShell 或 Git Bash 中使用没有作为主要目标测试。
 
@@ -287,7 +289,7 @@ Thu Apr 30 10:30:00 UTC 2026
 
 `send.sh` 适合会改变当前交互 shell 状态的命令，例如 `cd`、`export`、`sudo -i`；也适合长时间运行的 shell 命令、需要用户手动输入密码后的后续操作。因为它直接作用于当前 pane，发送前必须确认当前 prompt 和上下文。
 
-默认情况下，`send.sh` 会写一条本地 JSONL 审计事件，包含解码后的命令、目标 pane、环境和发送时间。因为 `send.sh` 不等待命令结束，所以事件里的 `exit_code` 和 `output` 都是 `null`。
+默认情况下，`send.sh` 会写一条本地 JSONL 审计事件，包含 request id、解码后的命令、目标 pane、环境和发送时间。因为 `send.sh` 不等待命令结束，所以事件里的 `exit_code` 和 `output` 都是 `null`。
 
 `send.sh` 不承诺支持 MySQL、Redis、Spark shell、psql、Python、Node 等 REPL 式交互命令行。对这类工具，优先使用一次性非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`。如果 pane 已经进入 REPL，agent 应报告当前状态，并请用户退出或手动处理。
 
@@ -305,7 +307,7 @@ base64 -d | bash
 
 命令通过 base64 传输，是为了减少嵌套引号、管道、分号、多层 shell 转义带来的问题。命令在远端子 `bash` 中执行，因此 `exit 7` 只会结束子进程，不会关闭当前交互 shell；但也意味着 `cd`、`export` 这类状态变化不会保留到命令结束之后。
 
-默认情况下，`run.sh` 会写一条本地 JSONL 审计事件，包含解码后的命令、目标 pane、环境、开始时间、结束时间、耗时、退出码和截断后的命令输出。
+默认情况下，`run.sh` 会写一条本地 JSONL 审计事件，包含 request id、解码后的命令、目标 pane、环境、开始时间、结束时间、耗时、退出码和截断后的命令输出。`run.sh` 和 `send.sh` 也会在本地打印 `[request_id ...]`，方便以后把终端输出对应回 JSONL。
 
 ### 远端 history 减噪
 
@@ -337,6 +339,7 @@ REMOTE_TMUX_LOG_ENABLED=1
 REMOTE_TMUX_LOG_DIR="$HOME/.codex/tmux-remote-linux/logs"
 REMOTE_TMUX_LOG_MAX_OUTPUT_LINES=10
 REMOTE_TMUX_LOG_RETENTION_DAYS=7
+REMOTE_TMUX_REQUEST_ID=<可选的固定ID>
 REMOTE_TMUX_COMMAND_EXPLANATION='解释这条生产命令要做什么'
 REMOTE_TMUX_PROD_APPROVAL_EXPECTED_DIGIT=7
 REMOTE_TMUX_PROD_APPROVAL_DIGIT=7
@@ -404,6 +407,10 @@ REMOTE_TMUX_PROD_APPROVAL_DIGIT=7
 ### `REMOTE_TMUX_LOG_RETENTION_DAYS`
 
 本地 `*.jsonl` 审计日志保留多少天。默认 `7`。清理会在写入新日志事件时顺手执行。
+
+### `REMOTE_TMUX_REQUEST_ID`
+
+单次 `run.sh` 或 `send.sh` 可选指定的 request id。如果不设置，脚本会用本地时间和进程 id 自动生成。这个 id 会由脚本打印出来，并写入 JSONL，方便把终端输出、聊天上下文和本地日志对应起来。
 
 ### `REMOTE_TMUX_COMMAND_EXPLANATION`
 
@@ -550,7 +557,21 @@ $HOME/.codex/tmux-remote-linux/logs
 2026-05-17.jsonl
 ```
 
-`run.sh` 会记录解码后的命令、目标 pane、环境、开始时间、结束时间、耗时、退出码，以及按 `REMOTE_TMUX_LOG_MAX_OUTPUT_LINES` 截断后的输出。`send.sh` 会记录解码后的命令、目标 pane、环境和发送时间，但因为它不等待命令完成，所以 `exit_code: null`、`output: null`。
+`run.sh` 会记录 request id、解码后的命令、目标 pane、环境、开始时间、结束时间、耗时、退出码，以及按 `REMOTE_TMUX_LOG_MAX_OUTPUT_LINES` 截断后的输出。`send.sh` 会记录 request id、解码后的命令、目标 pane、环境和发送时间，但因为它不等待命令完成，所以 `exit_code: null`、`output: null`。
+
+可以用 `scripts/logs.sh` 查询日志：
+
+```bash
+scripts/logs.sh path
+scripts/logs.sh last 10
+scripts/logs.sh today 20
+scripts/logs.sh failures
+scripts/logs.sh grep df
+scripts/logs.sh show 20260517-172200-12345
+scripts/logs.sh output 20260517-172200-12345
+```
+
+`logs.sh` 需要本机安装 `jq`。
 
 审计日志是本地敏感文件，里面可能包含生产命令、主机名、业务输出或错误细节。用户直接在 pane 里手动输入的密码、MFA code 和密钥不会被这些脚本捕获，但命令文本和命令输出本身仍可能包含敏感信息。
 
