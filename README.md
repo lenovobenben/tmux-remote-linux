@@ -4,7 +4,7 @@ Some projects cannot be tested from a developer laptop. The code is local, but t
 
 `tmux-remote-linux` closes that loop through a `tmux` pane you already control. You log in and prepare the shell yourself; Codex, Claude Code, Gemini CLI, or another AI coding agent only reads and writes that pane.
 
-This skill is designed for reliable shell operations, not full terminal interactivity. Do not hand the pane to an agent while it is inside a REPL or full-screen TUI such as MySQL, Redis, Python, Node, Spark shell, `vim`, `less`, or `top`.
+This skill is designed for reliable shell operations, not full terminal interactivity. Do not hand the pane to an agent while it is inside a REPL or full-screen TUI such as MySQL, Redis, Python, Node, Spark shell, `vim`, `less`, or `top`. Even an apparent `exit` from a non-shell CLI is not handled here; that belongs to the dedicated skill for that CLI.
 
 For the full manual, configuration reference, and troubleshooting notes, see [docs/reference.en.md](docs/reference.en.md). A Chinese version is available at [docs/reference.zh-CN.md](docs/reference.zh-CN.md).
 
@@ -88,9 +88,11 @@ Most users only need to remember three things:
 
 - Default target: `remote:0.0`
 - You must choose an environment: `production` or `non-production`
-- Short checks use `run.sh`; `cd`, `export`, and long-running shell commands use `send.sh`; REPL-style CLIs are not supported
+- Short checks use `run.sh`; `cd`, `export`, and long-running shell commands use `send.sh`; both are shell-only. REPL-style CLIs are not supported by this skill.
 - Commands sent by `run.sh` and `send.sh` are logged locally as JSONL under `~/.codex/tmux-remote-linux/logs` by default; `run.sh` records output and exit code, while `send.sh` records only that input was sent.
 - Use `scripts/logs.sh last`, `scripts/logs.sh failures`, `scripts/logs.sh grep <pattern>`, or `scripts/logs.sh show <request_id>` to query local logs.
+
+If the pane is inside a non-shell CLI such as `mysql>`, `python>>>`, `spark-sql>`, or an internal tool prompt, use a dedicated skill for that CLI. The dedicated skill should know how to enter and leave its own prompt and should send raw CLI syntax, not shell-wrapped commands.
 
 **Treat the target tmux pane as agent-managed.** Avoid typing your own commands into the same pane while the AI is using it. If you need manual work, open another terminal, pane, or session, or ask the agent to run the command. If you did change the managed pane manually, tell the agent what changed before asking it to continue.
 

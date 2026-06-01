@@ -10,7 +10,7 @@ This is the full Chinese reference manual. For the English version, see [referen
 
 Codex 不需要拿到凭据，也不需要自己重新建立 SSH 连接。用户自己登录并准备好 shell；agent 只通过 tmux pane 读取输出、发送命令、汇总结果。
 
-这个项目的目标是**稳妥地代理普通 shell 操作**，不是完整模拟人类使用终端。它有意不追求高交互式命令行和全屏 TUI 的全面支持。
+这个项目的目标是**稳妥地代理普通 shell 操作**，不是完整模拟人类使用终端。它有意不追求高交互式命令行和全屏 TUI 的全面支持。非 shell 的交互式 CLI 是另一个平级上下文，不是 shell；即使只是退出，也应该交给拥有该 CLI 的专用 skill。
 
 ## 为什么需要这个工具
 
@@ -285,13 +285,13 @@ Thu Apr 30 10:30:00 UTC 2026
 
 ### `send.sh`
 
-`send.sh` 会把命令按字面发送到 tmux pane，并按一次回车。它不包裹命令、不截取输出，也不知道远端退出码。
+`send.sh` 会向 tmux pane 发送一条 shell 命令，并按一次回车。默认情况下，它会在命令前加 shell history 清理包装，因此只适用于普通 shell prompt。它不截取输出，也不知道远端退出码。
 
 `send.sh` 适合会改变当前交互 shell 状态的命令，例如 `cd`、`export`、`sudo -i`；也适合长时间运行的 shell 命令、需要用户手动输入密码后的后续操作。因为它直接作用于当前 pane，发送前必须确认当前 prompt 和上下文。
 
 默认情况下，`send.sh` 会写一条本地 JSONL 审计事件，包含 request id、解码后的命令、目标 pane、环境和发送时间。因为 `send.sh` 不等待命令结束，所以事件里的 `exit_code` 和 `output` 都是 `null`。
 
-`send.sh` 不承诺支持 MySQL、Redis、Spark shell、psql、Python、Node 等 REPL 式交互命令行。对这类工具，优先使用一次性非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`。如果 pane 已经进入 REPL，agent 应报告当前状态，并请用户退出或手动处理。
+`send.sh` 不支持 MySQL、Redis、Spark shell、psql、Python、Node 等 REPL 式交互命令行，也不支持 Oasis `work>` 这类内部工具 prompt。它会检测常见的非 shell prompt 并拒绝发送，避免把 shell-only 包装灌进交互式 CLI。对这类工具，优先使用一次性非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`。如果 pane 已经进入 REPL 或工具 prompt，agent 应报告当前状态，并使用拥有该 CLI 的专用 skill；即使是 `exit`、`quit`、`bye`、`\q` 这类退出命令，也应由专用 skill 以原始 CLI 语法发送。
 
 ### `run.sh`
 
@@ -472,7 +472,7 @@ scripts/send.sh 'tail -f /var/log/app.log'
 
 作为软性的审计策略：需要记录命令结果时优先用 `run.sh`；切目录、设置环境、启动长任务或把控制权交还用户时优先用 `send.sh`。这是建议，不是硬性限制。
 
-不支持由 agent 操作 REPL 式交互命令行。典型例子包括 `mysql>`、`redis-cli`、`psql>`、`spark-shell>`、Python REPL、Node REPL、已经 attach 进去的容器 shell，或者任何状态存在于当前交互程序内部的 prompt。请改用非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`；如果已经进入 REPL，应由用户退出或手动处理后再让 agent 继续。
+不支持由这个 skill 操作 REPL 式交互命令行。典型例子包括 `mysql>`、`redis-cli`、`psql>`、`spark-shell>`、Python REPL、Node REPL、已经 attach 进去的容器 shell、Oasis `work>` 这类内部工具 prompt，或者任何状态存在于当前交互程序内部的 prompt。请改用非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`；如果某个项目确实需要对其中一种 CLI 做有限自动化，应创建该 CLI 的专用 skill。专用 skill 要知道如何进入 prompt、只执行受支持命令，并用正确的原始语法退出。
 
 复杂的多步骤检查，尤其是跨多台机器、包含循环、正则、管道和多层 `ssh` 的检查，不适合硬拼成很长的一行 shell。多层引号会同时经过本地 shell、`run.sh`、远端 shell、子 `bash` 和内层 `ssh`，很容易出现语法错误。
 
@@ -514,7 +514,7 @@ rm -f "$tmp"
 ## 注意事项
 
 - **稳妥优先，不追求全面交互能力。** 这个 skill 适合普通 shell 命令、短检查、有限输出、长任务启动和状态确认；不适合让 agent 像人一样操作复杂交互式命令行。
-- **托管 pane 不应以交互式命令行状态进入 agent。** 把 pane 交给 agent 前，应退出 MySQL、Redis、psql、Spark shell、Python REPL、Node REPL、容器内交互 shell、`vim`、`less`、`top`、`watch` 等状态，回到清晰的普通 shell prompt。
+- **托管 pane 不应以交互式命令行状态交给这个 skill。** 把 pane 交给这个 skill 前，应退出 MySQL、Redis、psql、Spark shell、Python REPL、Node REPL、容器内交互 shell、`vim`、`less`、`top`、`watch` 等状态，回到清晰的普通 shell prompt。如果另一个 skill 拥有该 CLI，应由那个 skill 负责退出；不要用 `tmux-remote-linux/send.sh` 退出非 shell CLI。
 - **把 agent 正在使用的 tmux pane 视为 agent 托管终端。** 用户尽量不要同时在这个 pane 里手动输入命令。手动操作会改变 cwd、用户、主机、环境变量、kubeconfig、REPL 状态和输出边界，可能导致 agent 误判上下文或把输出归属到错误命令。
 - **最佳实践是让托管 tmux session 默认不可见。** 远端 shell 准备好后，建议用 `Ctrl-b d` detach 这个 tmux session，让 agent 在后台操作。用户只有在需要输入密码、MFA、token，或明确要接管时才 `tmux attach -t remote` 回来；操作完成后应再次 detach。不要把 agent 托管 pane 长时间留在普通终端窗口里，避免顺手拿来做其他生产或测试操作。
 - `REMOTE_TMUX_ENV` 只控制脚本的确认策略，不会检测当前远端到底是测试环境还是生产环境。如果用户手动把托管 pane 从测试机切到生产机，agent 可能仍按旧假设继续发送命令。因此，托管 pane 不应作为日常手工运维终端使用。
@@ -529,7 +529,7 @@ rm -f "$tmp"
 - 小心 alias、shell function、环境变量和虚拟环境。
 - 生产环境下，不理解命令和影响范围时，不要输入或回复批准数字。
 - 生产环境每条命令都应该单独确认。不要只根据命令开头判断风险；shell 上下文、kubeconfig、alias、环境变量和业务逻辑都可能改变真实影响。
-- 改变 shell 状态或长时间运行的 shell 命令用 `send.sh`，有边界的检查命令用 `run.sh`；REPL 式交互命令行不由 agent 操作。
+- 改变 shell 状态或长时间运行的 shell 命令用 `send.sh`，有边界的检查命令用 `run.sh`；REPL 式交互命令行不由这个 skill 操作。
 - 避免通过这个工具执行多行生产操作。复杂流程应由用户自己在终端里操作。
 - 不要把这个项目当成权限系统。它只是本地安全保护，不是安全边界。
 
@@ -628,7 +628,7 @@ scripts/read.sh 200
 
 ### `interactive prompt detected`
 
-当前 pane 看起来已经在 MySQL、psql、Python、Spark shell、redis-cli、mongo shell、sqlite 等子交互 CLI 里。agent 不应继续发送 REPL 输入。请用户退出或手动处理该 REPL，或者改用 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e` 这类非交互命令。
+当前 pane 看起来已经在 MySQL、psql、Python、Spark shell、redis-cli、mongo shell、sqlite 等子交互 CLI 里，或者在 Oasis `work>` 这类内部工具 prompt 中。agent 不应通过这个 skill 继续发送 REPL 输入。请用户退出或手动处理该 REPL，使用该 CLI 的专用 skill，或者改用 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e` 这类非交互命令。
 
 ### `run.sh` 里的 `cd` 或 `export` 没有保留
 

@@ -70,6 +70,8 @@ $HOME/.codex/skills/tmux-remote-linux/scripts/read.sh 80
 $HOME/.codex/skills/tmux-remote-linux/scripts/send.sh '<command>'
 ```
 
+`send.sh` is for Linux shell prompts only. It may add shell-only history cleanup wrapping, so it must not be used inside non-shell interactive CLIs such as `mysql>`, `python>>>`, `spark-sql>`, `redis>`, or Oasis `work>`. Even simple inputs such as `exit`, `quit`, `bye`, or `\q` belong to the skill that owns that CLI.
+
 - Run one command with begin/end markers and an exit-code line:
 
 ```bash
@@ -128,7 +130,8 @@ Prefer the bundled scripts inside this skill directory so the workflow remains s
 - Prefer `send.sh` for commands expected to run for a long time, commands that intentionally change shell state such as `cd` or `export`, and commands with complex quoting.
 - As a soft policy, prefer `run.sh` when command results need an audit trail, and prefer `send.sh` for changing directory, setting environment, starting long-running work, or handing control back to the user. This is guidance, not a hard restriction.
 - The managed pane must not enter agent control while it is inside an interactive CLI, REPL, or TUI. If it is already in one, stop and ask the user to exit or handle it manually before continuing.
-- Interactive CLIs and REPLs are not supported. Do not operate MySQL, Redis, Spark shell, psql, Python, Node, or similar prompts by sending REPL input. Prefer one-shot non-interactive commands such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`.
+- Interactive CLIs and REPLs are not supported by this skill. Do not operate MySQL, Redis, Spark shell, psql, Python, Node, Oasis `work>`, or similar prompts by sending REPL input. Prefer one-shot non-interactive commands such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`, or use the dedicated skill that owns that CLI.
+- Do not use this skill to exit a non-shell CLI. The dedicated skill must know how to leave its own prompt, because `exit`, `quit`, `bye`, and `\q` differ across CLIs and must be sent without shell wrapping.
 - Bound unknown output. Do not dump unknown-size files, logs, or command results unless the user explicitly asks for full output.
 - Prefer limited reads: `sed -n '1,120p' file`, `tail -n 100`, keyword/time filters, `journalctl -n --no-pager`, `docker logs --tail`, or `kubectl logs --tail`; check `ls -lh`/`wc` only when full content is needed.
 - For complex multi-step checks, prefer a temporary script in non-production instead of fragile deeply nested one-liners; use `/tmp`, bounded output, and clean it up.

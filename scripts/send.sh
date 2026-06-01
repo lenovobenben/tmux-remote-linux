@@ -16,6 +16,13 @@ if [ "$#" -lt 1 ]; then
   exit 2
 fi
 
+recent_prompt="$(tmux capture-pane -J -t "$target" -p -S -20)"
+if printf "%s\n" "$recent_prompt" | grep -Eq '(^|[[:space:]])(work>|mysql>|MariaDB \[[^]]+\]>|postgres[=#]|[^[:space:]]+=>|redis[^>]*>|>>>|\.\.\.|In \[[0-9]+\]:|spark-sql>|scala>|psql[^>]*>) ?$'; then
+  echo "interactive non-shell prompt detected; send.sh only sends shell commands" >&2
+  echo "Use the owner skill for this CLI, for example oasis-cli/scripts/oasis_exit.sh for Oasis work>." >&2
+  exit 2
+fi
+
 remote_tmux_confirm_if_production "$1"
 request_id="$(remote_tmux_log_request_id)"
 if [ "$avoid_remote_history" = "0" ]; then

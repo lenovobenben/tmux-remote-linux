@@ -10,7 +10,7 @@ This tool is useful for two common cases. The first is remote validation: the us
 
 Codex does not need credentials and does not need to open its own SSH connection. The user logs in and prepares the shell; the agent only reads and writes the tmux pane.
 
-The goal of this project is **reliable ordinary shell operation**, not full human-like terminal interactivity. It intentionally does not try to fully support high-interaction command-line programs or full-screen TUIs.
+The goal of this project is **reliable ordinary shell operation**, not full human-like terminal interactivity. It intentionally does not try to fully support high-interaction command-line programs or full-screen TUIs. Non-shell interactive CLIs are separate contexts, not shells; even leaving them should be handled by the dedicated skill that owns that CLI.
 
 ## Why This Tool Exists
 
@@ -285,13 +285,13 @@ Use `read.sh` to confirm the current prompt, host, directory, foreground program
 
 ### `send.sh`
 
-`send.sh` sends the command literally to the tmux pane and presses Enter once. It does not wrap the command, capture output, or know the remote exit code.
+`send.sh` sends one shell command to the tmux pane and presses Enter once. By default it prefixes shell history cleanup wrapper text before the command, so it is only valid at a normal shell prompt. It does not capture output or know the remote exit code.
 
 Use `send.sh` for commands that change the current interactive shell state, such as `cd`, `export`, or `sudo -i`; it is also suitable for long-running shell commands and follow-up operations after the user manually enters a password. Because it directly acts on the current pane, confirm the current prompt and context before sending.
 
 By default, `send.sh` writes a local JSONL audit event with the request id, decoded command, target, environment, and send time. The event has `exit_code: null` and `output: null` because `send.sh` does not wait for command completion.
 
-`send.sh` does not promise support for REPL-style interactive CLIs such as MySQL, Redis, Spark shell, psql, Python, or Node. Prefer one-shot non-interactive commands such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`. If the pane is already inside a REPL, the agent should report the state and ask the user to exit or handle it manually.
+`send.sh` does not support REPL-style interactive CLIs such as MySQL, Redis, Spark shell, psql, Python, Node, or internal prompts such as Oasis `work>`. It detects common non-shell prompts and refuses rather than injecting shell-only wrapper text. Prefer one-shot non-interactive commands such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`. If the pane is already inside a REPL or tool prompt, the agent should report the state and use the dedicated skill for that CLI, including for simple exits such as `exit`, `quit`, `bye`, or `\q`.
 
 ### `run.sh`
 
@@ -472,7 +472,7 @@ scripts/send.sh 'tail -f /var/log/app.log'
 
 As a soft audit policy, prefer `run.sh` when command results need to be recorded, and prefer `send.sh` for changing directory, setting environment, starting long-running work, or handing control back to the user. This is guidance, not a hard restriction.
 
-Agents do not operate REPL-style interactive CLIs through this skill. Typical examples include `mysql>`, `redis-cli`, `psql>`, `spark-shell>`, Python REPL, Node REPL, attached container shells, or any prompt where state lives inside the current interactive program. Use non-interactive commands instead, such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`. If the pane is already inside a REPL, the user should exit or handle it manually before the agent continues.
+Agents do not operate REPL-style interactive CLIs through this skill. Typical examples include `mysql>`, `redis-cli`, `psql>`, `spark-shell>`, Python REPL, Node REPL, attached container shells, internal prompts such as Oasis `work>`, or any prompt where state lives inside the current interactive program. Use non-interactive commands instead, such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`. If a project needs limited automation for one of these CLIs, create a dedicated skill for that CLI; that skill should know how to enter the prompt, run only supported commands, and leave it with the correct raw syntax.
 
 Complex multi-step checks, especially checks that span multiple hosts and include loops, regular expressions, pipes, or nested `ssh`, should not be forced into a very long one-line shell command. Multi-layer quoting passes through the local shell, `run.sh`, the remote shell, a child `bash`, and inner `ssh`, which makes syntax errors likely.
 
@@ -514,7 +514,7 @@ If the begin marker is not found, `run.sh` does not print old pane history. If t
 ## Notes
 
 - **Reliability first, not full interactivity.** This skill is suitable for ordinary shell commands, short checks, bounded output, long-task startup, and state confirmation. It is not suitable for making an agent operate complex interactive command-line programs like a human.
-- **Do not hand the pane to an agent while it is inside an interactive command-line program.** Before handing the pane to an agent, exit MySQL, Redis, psql, Spark shell, Python REPL, Node REPL, container interactive shells, `vim`, `less`, `top`, `watch`, and similar states. Return to a clear ordinary shell prompt.
+- **Do not hand the pane to this skill while it is inside an interactive command-line program.** Before handing the pane to this skill, exit MySQL, Redis, psql, Spark shell, Python REPL, Node REPL, container interactive shells, `vim`, `less`, `top`, `watch`, and similar states. Return to a clear ordinary shell prompt. If another skill owns that CLI, use that skill to leave it; do not use `tmux-remote-linux/send.sh` for CLI exits.
 - **Treat the tmux pane used by the agent as an agent-managed terminal.** Avoid manually typing commands into the same pane while the agent is using it. Manual operations change cwd, user, host, environment variables, kubeconfig, REPL state, and output boundaries, and can cause the agent to misread context or attribute output to the wrong command.
 - **Best practice: keep the managed tmux session invisible by default.** After the remote shell is ready, detach the tmux session with `Ctrl-b d` and let the agent operate it in the background. Reattach with `tmux attach -t remote` only when you need to enter a password, MFA, token, or intentionally take over; detach again when finished. Do not leave the agent-managed pane open in a normal terminal window for a long time, because it may be accidentally reused for other production or test work.
 - `REMOTE_TMUX_ENV` controls only the script's confirmation policy. It does not detect whether the current remote target is actually test or production. If the user manually changes the managed pane from a test machine to a production machine, the agent may continue under the old assumption. Therefore the managed pane should not be used as a daily manual operations terminal.
@@ -529,7 +529,7 @@ If the begin marker is not found, `run.sh` does not print old pane history. If t
 - Beware aliases, shell functions, environment variables, and virtual environments.
 - In production, do not type or reply with the approval digit if you do not understand the command and its impact.
 - Every production command should be approved separately. Do not judge risk only by the command prefix; shell context, kubeconfig, aliases, environment variables, and business logic can change the actual impact.
-- Use `send.sh` for state-changing or long-running shell commands, and `run.sh` for bounded inspection commands. REPL-style interactive CLIs are not operated by the agent.
+- Use `send.sh` for state-changing or long-running shell commands, and `run.sh` for bounded inspection commands. REPL-style interactive CLIs are not operated by this skill.
 - Avoid multi-line production operations through this tool. Complex procedures should be performed by the user directly in the terminal.
 - Do not treat this project as a permission system. It is a local safety guard, not a security boundary.
 
@@ -628,7 +628,7 @@ scripts/read.sh 200
 
 ### `interactive prompt detected`
 
-The pane appears to be inside a child interactive CLI such as MySQL, psql, Python, Spark shell, redis-cli, mongo shell, or sqlite. The agent should not continue sending REPL input. Ask the user to exit or handle that REPL manually, or use a non-interactive command such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`.
+The pane appears to be inside a child interactive CLI such as MySQL, psql, Python, Spark shell, redis-cli, mongo shell, sqlite, or an internal prompt such as Oasis `work>`. The agent should not continue sending REPL input through this skill. Ask the user to exit or handle that REPL manually, use the dedicated skill for that CLI, or use a non-interactive command such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`.
 
 ### `cd` or `export` in `run.sh` did not persist
 
