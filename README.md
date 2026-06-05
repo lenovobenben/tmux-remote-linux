@@ -89,6 +89,7 @@ Most users only need to remember three things:
 - Default target: `remote:0.0`
 - You must choose an environment: `production` or `non-production`
 - Short checks use `run.sh`; `cd`, `export`, and long-running shell commands use `send.sh`; both are shell-only. REPL-style CLIs are not supported by this skill.
+- Pass the whole shell command as one quoted argument, for example `scripts/run.sh 'pwd; hostname'`.
 - Commands sent by `run.sh` and `send.sh` are logged locally as JSONL under `~/.codex/tmux-remote-linux/logs` by default; `run.sh` records output and exit code, while `send.sh` records only that input was sent.
 - Use `scripts/logs.sh last`, `scripts/logs.sh failures`, `scripts/logs.sh grep <pattern>`, or `scripts/logs.sh show <request_id>` to query local logs.
 

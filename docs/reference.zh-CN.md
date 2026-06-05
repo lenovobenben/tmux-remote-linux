@@ -287,6 +287,8 @@ Thu Apr 30 10:30:00 UTC 2026
 
 `send.sh` 会向 tmux pane 发送一条 shell 命令，并按一次回车。默认情况下，它会在命令前加 shell history 清理包装，因此只适用于普通 shell prompt。它不截取输出，也不知道远端退出码。
 
+整条 shell 命令必须作为一个加引号的参数传入。如果 `send.sh` 收到多余参数，它会打印 usage 并退出，不会猜测如何拼接参数。
+
 `send.sh` 适合会改变当前交互 shell 状态的命令，例如 `cd`、`export`、`sudo -i`；也适合长时间运行的 shell 命令、需要用户手动输入密码后的后续操作。因为它直接作用于当前 pane，发送前必须确认当前 prompt 和上下文。
 
 默认情况下，`send.sh` 会写一条本地 JSONL 审计事件，包含 request id、解码后的命令、目标 pane、环境和发送时间。因为 `send.sh` 不等待命令结束，所以事件里的 `exit_code` 和 `output` 都是 `null`。
@@ -297,13 +299,15 @@ Thu Apr 30 10:30:00 UTC 2026
 
 `run.sh` 适合短小、非交互式检查命令。它会先检查配置和当前 pane 状态，拒绝在明显的 MySQL、psql、Python、Spark 等交互式 prompt 上包裹命令；如果发现上一次 `run.sh` 的 begin marker 还没有对应的 end marker，也会拒绝继续发送新命令，避免命令叠加污染 pane。
 
+整条 shell 命令必须作为一个加引号的参数传入。如果 `run.sh` 收到多余参数，它会打印 usage 并退出，不会静默丢弃后面的参数。
+
 通过检查后，`run.sh` 会生成唯一 begin/end marker，在本地把用户命令 base64 编码，然后向 tmux pane 发送一个 wrapper。这个 wrapper 在远端打印 begin marker，执行：
 
 ```bash
 base64 -d | bash
 ```
 
-随后记录远端命令的退出码，打印 end marker 和退出码。`run.sh` 再从 tmux pane 最近输出中找到 begin/end marker，只返回这次命令的输出，并打印 `[exit N]`。本地脚本也会用同样的退出码结束。
+随后记录远端命令的退出码，打印 end marker 和退出码。`run.sh` 再从 marker 抓取窗口中找到 begin/end marker，只返回这次命令的输出，并打印 `[exit N]`。本地脚本也会用同样的退出码结束。
 
 命令通过 base64 传输，是为了减少嵌套引号、管道、分号、多层 shell 转义带来的问题。命令在远端子 `bash` 中执行，因此 `exit 7` 只会结束子进程，不会关闭当前交互 shell；但也意味着 `cd`、`export` 这类状态变化不会保留到命令结束之后。
 
@@ -330,6 +334,8 @@ REMOTE_TMUX_LINES=40
 REMOTE_TMUX_FILTER_WRAPPER=1
 REMOTE_TMUX_RUN_WAIT_SECONDS=1
 REMOTE_TMUX_RUN_CAPTURE_LINES=400
+REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=5000
+REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS=5
 REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40
@@ -370,7 +376,15 @@ REMOTE_TMUX_PROD_APPROVAL_DIGIT=7
 
 ### `REMOTE_TMUX_RUN_CAPTURE_LINES`
 
-`run.sh` 为了寻找 begin/end marker 抓取多少行 pane 输出，默认 `400`。
+保留给旧配置兼容的最小 pane 抓取窗口，默认 `400`。实际传输 marker 搜索窗口由 `REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES` 控制，并且会自动提高到至少这个值。
+
+### `REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES`
+
+`run.sh` 为寻找传输 marker 和未结束的旧 run 抓取多少行 pane 输出，默认 `5000`。如果这个值小于 `REMOTE_TMUX_RUN_CAPTURE_LINES`，`run.sh` 会自动把它提高到 `REMOTE_TMUX_RUN_CAPTURE_LINES`。
+
+### `REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS`
+
+初次抓取没有看到 begin marker 时，`run.sh` 最多额外等待多少秒再报告 `begin_not_found`，默认 `5`。只有初次抓取缺少 begin marker 时才会额外等待。
 
 ### `REMOTE_TMUX_RUN_MAX_OUTPUT_LINES`
 
@@ -436,11 +450,12 @@ REMOTE_TMUX_PROD_APPROVAL_DIGIT=7
 - 对 `kubectl get`、日志查询、数据库查询等命令，优先加 namespace、label、时间范围、字段选择或 limit。
 - 长任务运行中优先等待并少量轮询，不要频繁抓取大段输出。
 
-可以调节 token 消耗的配置项：
+可以调节输出量或抓取行为的配置项：
 
 ```bash
 REMOTE_TMUX_LINES=40                    # read.sh 默认读取行数
-REMOTE_TMUX_RUN_CAPTURE_LINES=400       # run.sh 为寻找 marker 抓取的 pane 行数
+REMOTE_TMUX_RUN_CAPTURE_LINES=400       # run.sh marker 抓取窗口的最小值
+REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=5000 # marker 恢复窗口，不增加打印输出
 REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200    # run.sh 最多打印本次命令多少行输出
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768  # run.sh 最多打印本次命令多少字节输出
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40 # 长命令未结束时最多打印多少行尾部输出
@@ -503,13 +518,13 @@ rm -f "$tmp"
 2. 在本地把命令 base64 编码。
 3. 把一个小 wrapper 发送进 tmux pane。
 4. 在远端解码命令并用 `bash` 执行。
-5. 抓取最近 pane 输出。
+5. 抓取最近 pane 输出中的 marker 恢复窗口。
 6. 只打印 begin/end marker 之间的内容，并受行数和字节数限制。
 7. 打印 `[exit N]`，并用同样的退出码结束本地脚本。
 
 这样可以避免大部分嵌套引号问题，也能避免 `exit 7` 这类命令关闭当前远端 shell。
 
-如果找不到 begin marker，`run.sh` 不会打印旧 pane 历史。如果找到了 begin marker 但还没找到 end marker，它只会打印本次命令的一小段尾部输出，并返回 `124`。
+如果找不到 begin marker，`run.sh` 会最多等待 `REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS`，并且不会打印旧 pane 历史。如果找到了 begin marker 但还没找到 end marker，它只会打印本次命令的一小段尾部输出，并返回 `124`。
 
 ## 注意事项
 
@@ -606,7 +621,7 @@ tmux list-panes -a
 
 ### `begin marker not found yet`
 
-`run.sh` 没有在抓取的 pane 输出里看到自己这次 wrapper 的开始 marker。它会刻意避免打印旧 pane 历史。可以直接查看当前 pane：
+`run.sh` 在 marker 抓取窗口里没有看到自己这次 wrapper 的开始 marker，即使已经最多等待 `REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS`。它会刻意避免打印旧 pane 历史。可以直接查看当前 pane：
 
 ```bash
 scripts/read.sh 40
@@ -614,10 +629,10 @@ scripts/read.sh 40
 
 ### `end marker not found yet`
 
-命令可能还在运行，或者抓取窗口太小。可以增大：
+命令可能还在运行，或者 marker 抓取窗口太小。可以增大：
 
 ```bash
-export REMOTE_TMUX_RUN_CAPTURE_LINES=1000
+export REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=10000
 ```
 
 然后查看 pane：

@@ -49,8 +49,14 @@ remote_tmux_log_json_string() {
       }
       gsub(/\\/, "\\\\")
       gsub(/"/, "\\\"")
-      gsub(/\t/, "\\t")
-      gsub(/\r/, "\\r")
+      for (i = 1; i < 32; i++) {
+        if (i == 10) {
+          continue
+        }
+        control = sprintf("%c", i)
+        replacement = sprintf("\\u%04x", i)
+        gsub(control, replacement)
+      }
       printf "%s", $0
     }
     END {
@@ -125,7 +131,7 @@ remote_tmux_log_run_event() {
   local exit_code="${10}"
   local output_text="${11}"
   local log_max_lines line_count truncated limited_output
-  local request_id_json command_json output_json exit_code_json json_line
+  local script_name_json request_id_json target_json environment_json status_json command_json started_at_json ended_at_json output_json exit_code_json json_line
 
   remote_tmux_log_enabled || return 0
 
@@ -134,8 +140,14 @@ remote_tmux_log_run_event() {
   truncated="$(remote_tmux_log_is_truncated "$log_max_lines" "$line_count")"
   limited_output="$(printf '%s' "$output_text" | remote_tmux_log_limited_output "$log_max_lines")"
 
+  script_name_json="$(printf '%s' "$script_name" | remote_tmux_log_json_string)"
   request_id_json="$(printf '%s' "$request_id" | remote_tmux_log_json_string)"
+  target_json="$(printf '%s' "$target" | remote_tmux_log_json_string)"
+  environment_json="$(printf '%s' "$environment" | remote_tmux_log_json_string)"
+  status_json="$(printf '%s' "$status" | remote_tmux_log_json_string)"
   command_json="$(printf '%s' "$command_text" | remote_tmux_log_json_string)"
+  started_at_json="$(printf '%s' "$started_at" | remote_tmux_log_json_string)"
+  ended_at_json="$(printf '%s' "$ended_at" | remote_tmux_log_json_string)"
   output_json="$(printf '%s' "$limited_output" | remote_tmux_log_json_string)"
 
   if [[ "$exit_code" =~ ^[0-9]+$ ]]; then
@@ -144,7 +156,7 @@ remote_tmux_log_run_event() {
     exit_code_json="null"
   fi
 
-  json_line="{\"schema_version\":1,\"tool\":\"tmux-remote-linux\",\"request_id\":$request_id_json,\"script\":\"$script_name\",\"target\":\"$target\",\"env\":\"$environment\",\"status\":\"$status\",\"command\":$command_json,\"started_at\":\"$started_at\",\"ended_at\":\"$ended_at\",\"duration_ms\":$duration_ms,\"exit_code\":$exit_code_json,\"output\":{\"text\":$output_json,\"max_lines\":$log_max_lines,\"line_count\":$line_count,\"truncated\":$truncated}}"
+  json_line="{\"schema_version\":1,\"tool\":\"tmux-remote-linux\",\"request_id\":$request_id_json,\"script\":$script_name_json,\"target\":$target_json,\"env\":$environment_json,\"status\":$status_json,\"command\":$command_json,\"started_at\":$started_at_json,\"ended_at\":$ended_at_json,\"duration_ms\":$duration_ms,\"exit_code\":$exit_code_json,\"output\":{\"text\":$output_json,\"max_lines\":$log_max_lines,\"line_count\":$line_count,\"truncated\":$truncated}}"
   remote_tmux_log_append_json "$json_line"
 }
 
@@ -155,12 +167,16 @@ remote_tmux_log_send_event() {
   local environment="$4"
   local command_text="$5"
   local sent_at="$6"
-  local request_id_json command_json json_line
+  local script_name_json request_id_json target_json environment_json command_json sent_at_json json_line
 
   remote_tmux_log_enabled || return 0
 
+  script_name_json="$(printf '%s' "$script_name" | remote_tmux_log_json_string)"
   request_id_json="$(printf '%s' "$request_id" | remote_tmux_log_json_string)"
+  target_json="$(printf '%s' "$target" | remote_tmux_log_json_string)"
+  environment_json="$(printf '%s' "$environment" | remote_tmux_log_json_string)"
   command_json="$(printf '%s' "$command_text" | remote_tmux_log_json_string)"
-  json_line="{\"schema_version\":1,\"tool\":\"tmux-remote-linux\",\"request_id\":$request_id_json,\"script\":\"$script_name\",\"target\":\"$target\",\"env\":\"$environment\",\"status\":\"sent\",\"command\":$command_json,\"sent_at\":\"$sent_at\",\"exit_code\":null,\"output\":null,\"note\":\"send.sh sends input and does not wait for command completion\"}"
+  sent_at_json="$(printf '%s' "$sent_at" | remote_tmux_log_json_string)"
+  json_line="{\"schema_version\":1,\"tool\":\"tmux-remote-linux\",\"request_id\":$request_id_json,\"script\":$script_name_json,\"target\":$target_json,\"env\":$environment_json,\"status\":\"sent\",\"command\":$command_json,\"sent_at\":$sent_at_json,\"exit_code\":null,\"output\":null,\"note\":\"send.sh sends input and does not wait for command completion\"}"
   remote_tmux_log_append_json "$json_line"
 }

@@ -287,6 +287,8 @@ Use `read.sh` to confirm the current prompt, host, directory, foreground program
 
 `send.sh` sends one shell command to the tmux pane and presses Enter once. By default it prefixes shell history cleanup wrapper text before the command, so it is only valid at a normal shell prompt. It does not capture output or know the remote exit code.
 
+Pass the whole shell command as one quoted argument. If `send.sh` receives extra arguments, it exits with usage instead of guessing how to join them.
+
 Use `send.sh` for commands that change the current interactive shell state, such as `cd`, `export`, or `sudo -i`; it is also suitable for long-running shell commands and follow-up operations after the user manually enters a password. Because it directly acts on the current pane, confirm the current prompt and context before sending.
 
 By default, `send.sh` writes a local JSONL audit event with the request id, decoded command, target, environment, and send time. The event has `exit_code: null` and `output: null` because `send.sh` does not wait for command completion.
@@ -297,13 +299,15 @@ By default, `send.sh` writes a local JSONL audit event with the request id, deco
 
 `run.sh` is for short, non-interactive inspection commands. It first checks configuration and current pane state, refuses to wrap commands on obvious interactive prompts such as MySQL, psql, Python, or Spark, and refuses to send a new command if it detects a previous `run.sh` begin marker without a corresponding end marker. This avoids stacking commands and polluting the pane.
 
+Pass the whole shell command as one quoted argument. If `run.sh` receives extra arguments, it exits with usage instead of silently dropping them.
+
 After checks pass, `run.sh` generates unique begin/end markers, base64-encodes the user command locally, and sends a wrapper into the tmux pane. The wrapper prints the begin marker on the remote side and runs:
 
 ```bash
 base64 -d | bash
 ```
 
-It then records the remote exit code and prints the end marker and exit code. `run.sh` finds the begin/end markers in recent pane output, returns only this command's output, and prints `[exit N]`. The local script exits with the same code.
+It then records the remote exit code and prints the end marker and exit code. `run.sh` searches a marker capture window for the begin/end markers, returns only this command's output, and prints `[exit N]`. The local script exits with the same code.
 
 Commands are transferred through base64 to reduce issues with nested quotes, pipes, semicolons, and multiple shell-escaping layers. The command runs in a child remote `bash`, so `exit 7` only exits the child process and does not close the current interactive shell. It also means state changes such as `cd` and `export` do not persist after the command finishes.
 
@@ -330,6 +334,8 @@ REMOTE_TMUX_LINES=40
 REMOTE_TMUX_FILTER_WRAPPER=1
 REMOTE_TMUX_RUN_WAIT_SECONDS=1
 REMOTE_TMUX_RUN_CAPTURE_LINES=400
+REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=5000
+REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS=5
 REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40
@@ -370,7 +376,15 @@ How long `run.sh` waits after sending the command before capturing output. Defau
 
 ### `REMOTE_TMUX_RUN_CAPTURE_LINES`
 
-How many pane lines `run.sh` captures while searching for begin/end markers. Default: `400`.
+Minimum pane capture window retained for compatibility with older configurations. Default: `400`. The actual transport marker search window is controlled by `REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES`, which is raised to at least this value.
+
+### `REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES`
+
+How many pane lines `run.sh` captures while searching for transport markers and stale in-flight runs. Default: `5000`. If this is smaller than `REMOTE_TMUX_RUN_CAPTURE_LINES`, `run.sh` raises it to match `REMOTE_TMUX_RUN_CAPTURE_LINES`.
+
+### `REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS`
+
+How many extra seconds `run.sh` waits for its begin marker before reporting `begin_not_found`. Default: `5`. This only applies when the initial capture does not show the begin marker.
 
 ### `REMOTE_TMUX_RUN_MAX_OUTPUT_LINES`
 
@@ -436,11 +450,12 @@ Suggestions to reduce token use:
 - For `kubectl get`, log queries, and database queries, prefer namespace, label, time range, field selection, or limit options.
 - For long-running tasks, wait and poll small amounts of output instead of frequently capturing large chunks.
 
-Configuration values that affect token use:
+Configuration values that affect output volume or capture behavior:
 
 ```bash
 REMOTE_TMUX_LINES=40                    # default read.sh line count
-REMOTE_TMUX_RUN_CAPTURE_LINES=400       # pane lines captured by run.sh while searching markers
+REMOTE_TMUX_RUN_CAPTURE_LINES=400       # minimum run.sh marker capture window
+REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=5000 # marker recovery window; does not increase printed output
 REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200    # maximum output lines printed by run.sh
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768  # maximum output bytes printed by run.sh
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40 # maximum tail lines while a command is still running
@@ -503,13 +518,13 @@ Do not write temporary scripts by default in production. Consider doing so only 
 2. Base64-encodes the command locally.
 3. Sends a small wrapper into the tmux pane.
 4. Decodes the command remotely and runs it with `bash`.
-5. Captures recent pane output.
+5. Captures a marker recovery window from recent pane output.
 6. Prints only content between the begin/end markers, subject to line and byte limits.
 7. Prints `[exit N]` and exits locally with the same code.
 
 This avoids most nested-quote issues and prevents commands like `exit 7` from closing the current remote shell.
 
-If the begin marker is not found, `run.sh` does not print old pane history. If the begin marker is found but the end marker is not found yet, it prints only a short tail of this command's output and exits with `124`.
+If the begin marker is not found, `run.sh` waits up to `REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS` for it and does not print old pane history. If the begin marker is found but the end marker is not found yet, it prints only a short tail of this command's output and exits with `124`.
 
 ## Notes
 
@@ -606,7 +621,7 @@ Set `REMOTE_TMUX_TARGET` if needed.
 
 ### `begin marker not found yet`
 
-`run.sh` did not see the begin marker for its wrapper in the captured pane output. It intentionally avoids printing old pane history. Inspect the current pane directly:
+`run.sh` did not see the begin marker for its wrapper in the marker capture window, even after waiting up to `REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS`. It intentionally avoids printing old pane history. Inspect the current pane directly:
 
 ```bash
 scripts/read.sh 40
@@ -614,10 +629,10 @@ scripts/read.sh 40
 
 ### `end marker not found yet`
 
-The command may still be running, or the capture window may be too small. You can increase:
+The command may still be running, or the marker capture window may be too small. You can increase:
 
 ```bash
-export REMOTE_TMUX_RUN_CAPTURE_LINES=1000
+export REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=10000
 ```
 
 Then inspect the pane:

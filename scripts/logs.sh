@@ -95,7 +95,9 @@ case "$command_name" in
     count="$(positive_or_default "${2:-}" 10)"
     today_file="$log_dir/$(date '+%Y-%m-%d').jsonl"
     print_summary_header
-    [ -f "$today_file" ] && tail -n "$count" "$today_file" | jq -r "$summary_jq"
+    if [ -f "$today_file" ]; then
+      tail -n "$count" "$today_file" | jq -r "$summary_jq"
+    fi
     ;;
   failures)
     require_jq

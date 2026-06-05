@@ -80,6 +80,8 @@ $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh '<command>'
 
 `run.sh` sends the command through base64, executes it in a remote `bash` child process, waits briefly, captures recent pane output, and prints only the output between its unique markers. It appends `[exit N]` when the end marker is visible, and the local script exits with the remote command's exit code. It does not dump old pane history if its begin marker is missing. For long-running commands, if the end marker is not visible yet, wait and call `read.sh` to inspect progress rather than interrupting.
 
+Pass the whole shell command as one quoted argument. If `run.sh` or `send.sh` receives extra arguments, it exits with usage instead of guessing how to join them.
+
 Important: `run.sh` always starts a fresh non-interactive `bash` child. Do not use it to query or control state that only exists inside the current interactive program, such as `mysql>`, `redis-cli`, `spark-shell>`, `psql>`, a Python REPL, a Node REPL, an attached container shell, or shell in-memory history. Use `read.sh` to identify and report the current prompt, then ask the user to exit or handle that REPL manually.
 
 - Query local JSONL audit logs:
@@ -100,6 +102,8 @@ REMOTE_TMUX_ENV=non-production
 REMOTE_TMUX_FILTER_WRAPPER=1
 REMOTE_TMUX_RUN_WAIT_SECONDS=1
 REMOTE_TMUX_RUN_CAPTURE_LINES=400
+REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=5000
+REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS=5
 REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40

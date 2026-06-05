@@ -11,7 +11,7 @@ remote_tmux_require_environment
 target="${REMOTE_TMUX_TARGET:-remote:0.0}"
 avoid_remote_history="${REMOTE_TMUX_AVOID_REMOTE_HISTORY:-1}"
 
-if [ "$#" -lt 1 ]; then
+if [ "$#" -ne 1 ]; then
   echo "usage: $0 '<command>'" >&2
   exit 2
 fi

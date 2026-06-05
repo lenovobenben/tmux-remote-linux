@@ -11,27 +11,33 @@ remote_tmux_require_environment
 target="${REMOTE_TMUX_TARGET:-remote:0.0}"
 wait_seconds="${REMOTE_TMUX_RUN_WAIT_SECONDS:-1}"
 capture_lines="${REMOTE_TMUX_RUN_CAPTURE_LINES:-400}"
+marker_capture_lines="${REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES:-5000}"
+begin_timeout_seconds="${REMOTE_TMUX_RUN_BEGIN_TIMEOUT_SECONDS:-5}"
 max_output_lines="${REMOTE_TMUX_RUN_MAX_OUTPUT_LINES:-200}"
 max_output_bytes="${REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES:-32768}"
 pending_output_lines="${REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES:-40}"
 detect_interactive="${REMOTE_TMUX_DETECT_INTERACTIVE:-1}"
 avoid_remote_history="${REMOTE_TMUX_AVOID_REMOTE_HISTORY:-1}"
 
-if [ "$#" -lt 1 ]; then
+if [ "$#" -ne 1 ]; then
   echo "usage: $0 '<command>'" >&2
   exit 2
 fi
 
-for numeric_value in "$wait_seconds" "$capture_lines" "$max_output_lines" "$max_output_bytes" "$pending_output_lines"; do
+for numeric_value in "$wait_seconds" "$capture_lines" "$marker_capture_lines" "$begin_timeout_seconds" "$max_output_lines" "$max_output_bytes" "$pending_output_lines"; do
   if ! [[ "$numeric_value" =~ ^[0-9]+$ ]]; then
     echo "run.sh configuration values must be non-negative integers" >&2
     exit 2
   fi
 done
 
-if [ "$capture_lines" -le 0 ] || [ "$max_output_lines" -le 0 ] || [ "$max_output_bytes" -le 0 ] || [ "$pending_output_lines" -le 0 ]; then
+if [ "$capture_lines" -le 0 ] || [ "$marker_capture_lines" -le 0 ] || [ "$max_output_lines" -le 0 ] || [ "$max_output_bytes" -le 0 ] || [ "$pending_output_lines" -le 0 ]; then
   echo "run.sh line and byte limits must be positive" >&2
   exit 2
+fi
+
+if [ "$marker_capture_lines" -lt "$capture_lines" ]; then
+  marker_capture_lines="$capture_lines"
 fi
 
 limit_output() {
@@ -86,7 +92,7 @@ EOF
 
 detect_stale_run() {
   local recent b end_marker
-  recent="$(tmux capture-pane -t "$target" -p -S -20)"
+  recent="$(tmux capture-pane -t "$target" -p -S "-$marker_capture_lines")"
   while IFS= read -r b; do
     [ -z "$b" ] && continue
     end_marker="${b/BEGIN__/END__}"
@@ -126,7 +132,17 @@ remote_command="printf '%s' '$encoded_inner_command' | base64 -d | HISTFILE=/dev
 send_remote_command "$remote_command"
 sleep "$wait_seconds"
 
-captured="$(tmux capture-pane -t "$target" -p -S "-$capture_lines")"
+captured="$(tmux capture-pane -t "$target" -p -S "-$marker_capture_lines")"
+
+if ! printf '%s\n' "$captured" | grep -Fxq "$begin"; then
+  for ((i = 0; i < begin_timeout_seconds; i++)); do
+    sleep 1
+    captured="$(tmux capture-pane -t "$target" -p -S "-$marker_capture_lines")"
+    if printf '%s\n' "$captured" | grep -Fxq "$begin"; then
+      break
+    fi
+  done
+fi
 
 if ! printf '%s\n' "$captured" | grep -Fxq "$begin"; then
   ended_at="$(remote_tmux_log_now)"
