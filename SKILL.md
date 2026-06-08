@@ -130,6 +130,7 @@ Prefer the bundled scripts inside this skill directory so the workflow remains s
 
 - Start by reading the pane unless the user gave a precise command to run.
 - Treat the tmux pane as shared state. The current prompt, cwd, active kubeconfig, and any running foreground command matter.
+- Never send concurrent commands or input to the same tmux target. A tmux pane is a serial interactive channel; wait for one `run.sh`, `send.sh`, or manual recovery action to finish before starting another on that target.
 - Prefer `run.sh` for short, non-interactive inspection commands because it gives a scoped output and exit code.
 - Prefer `send.sh` for commands expected to run for a long time, commands that intentionally change shell state such as `cd` or `export`, and commands with complex quoting.
 - As a soft policy, prefer `run.sh` when command results need an audit trail, and prefer `send.sh` for changing directory, setting environment, starting long-running work, or handing control back to the user. This is guidance, not a hard restriction.

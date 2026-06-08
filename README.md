@@ -95,6 +95,8 @@ Most users only need to remember three things:
 
 If the pane is inside a non-shell CLI such as `mysql>`, `python>>>`, `spark-sql>`, or an internal tool prompt, use a dedicated skill for that CLI. The dedicated skill should know how to enter and leave its own prompt and should send raw CLI syntax, not shell-wrapped commands.
 
+**Do not send concurrent input to the same tmux target.** A tmux pane is a serial interactive channel. Wait for one command or recovery action to finish before starting another command on that same pane.
+
 **Treat the target tmux pane as agent-managed.** Avoid typing your own commands into the same pane while the AI is using it. If you need manual work, open another terminal, pane, or session, or ask the agent to run the command. If you did change the managed pane manually, tell the agent what changed before asking it to continue.
 
 **Best practice: detach the managed tmux session.** After the remote shell is ready, detach with `Ctrl-b d` and let the agent operate it in the background. Re-attach with `tmux attach -t remote` only when you need to type a secret or intentionally take over, then detach again.

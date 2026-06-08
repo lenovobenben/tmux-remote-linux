@@ -531,6 +531,7 @@ rm -f "$tmp"
 - **稳妥优先，不追求全面交互能力。** 这个 skill 适合普通 shell 命令、短检查、有限输出、长任务启动和状态确认；不适合让 agent 像人一样操作复杂交互式命令行。
 - **托管 pane 不应以交互式命令行状态交给这个 skill。** 把 pane 交给这个 skill 前，应退出 MySQL、Redis、psql、Spark shell、Python REPL、Node REPL、容器内交互 shell、`vim`、`less`、`top`、`watch` 等状态，回到清晰的普通 shell prompt。如果另一个 skill 拥有该 CLI，应由那个 skill 负责退出；不要用 `tmux-remote-linux/send.sh` 退出非 shell CLI。
 - **把 agent 正在使用的 tmux pane 视为 agent 托管终端。** 用户尽量不要同时在这个 pane 里手动输入命令。手动操作会改变 cwd、用户、主机、环境变量、kubeconfig、REPL 状态和输出边界，可能导致 agent 误判上下文或把输出归属到错误命令。
+- **不要对同一个 tmux target 并发发送输入。** tmux pane 是串行交互通道。agent 必须等待上一条 `run.sh`、`send.sh` 或恢复动作完成后，才能在同一个 target 上开始下一条。只有明确 target pane 不同时，才可以并行操作不同 target。
 - **最佳实践是让托管 tmux session 默认不可见。** 远端 shell 准备好后，建议用 `Ctrl-b d` detach 这个 tmux session，让 agent 在后台操作。用户只有在需要输入密码、MFA、token，或明确要接管时才 `tmux attach -t remote` 回来；操作完成后应再次 detach。不要把 agent 托管 pane 长时间留在普通终端窗口里，避免顺手拿来做其他生产或测试操作。
 - `REMOTE_TMUX_ENV` 只控制脚本的确认策略，不会检测当前远端到底是测试环境还是生产环境。如果用户手动把托管 pane 从测试机切到生产机，agent 可能仍按旧假设继续发送命令。因此，托管 pane 不应作为日常手工运维终端使用。
 - 如果需要手动操作，建议使用另一个终端、另一个 tmux pane 或另一个 tmux session；如果希望 agent 后续理解和接手，最好直接让 agent 代为执行。
