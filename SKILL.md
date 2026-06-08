@@ -33,10 +33,12 @@ Production chat approval policy for Codex:
 
 1. Before every production `send.sh` or `run.sh` command, generate a fresh random digit from `0` to `9`.
 2. Show the user the target, exact command, and a clear Chinese explanation of what the command will do and why it is needed.
-3. Keep the approval prompt compact. Do not add blank lines between the explanation, target, command, and approval digit. Put target and explanation on one line. Put the command on its own line so it is easy to scan. Put the approval digit at the end of the approval sentence on that same command line. Use only Markdown styles that render reliably in Codex terminal output: bold labels and inline-code values. Do not use HTML tags or inline CSS; they may be printed literally.
+3. Keep the approval prompt compact. Do not add blank lines between the target, explanation, command, and approval digit. Put the target on the production confirmation line. Put the explanation, command, and approval sentence each on their own line so they are easy to scan. Use only Markdown styles that render reliably in Codex terminal output: bold labels and inline-code values. Do not use HTML tags or inline CSS; they may be printed literally.
 4. Use this rendered Markdown format, not a fenced code block:
-   **生产确认**：**目标** `remote:0.0`。**说明**：`<one concise Chinese sentence>`
-   **命令**：`<command>`。**同意执行请只回复数字** `<digit>`
+   **生产确认**：**目标** `remote:0.0`
+   **说明**：`<one concise Chinese sentence>`
+   **命令**：`<command>`
+   **同意执行请只回复数字** `<digit>`
 
 5. If the command is too long for one line, keep the command in one fenced code block and put the approval sentence immediately after it without extra blank lines.
 6. Ask the user to reply with only that digit if they approve this exact command.

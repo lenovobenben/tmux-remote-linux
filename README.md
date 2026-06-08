@@ -6,7 +6,7 @@ Some projects cannot be tested from a developer laptop. The code is local, but t
 
 This skill is designed for reliable shell operations, not full terminal interactivity. Do not hand the pane to an agent while it is inside a REPL or full-screen TUI such as MySQL, Redis, Python, Node, Spark shell, `vim`, `less`, or `top`. Even an apparent `exit` from a non-shell CLI is not handled here; that belongs to the dedicated skill for that CLI.
 
-For the full manual, configuration reference, and troubleshooting notes, see [docs/reference.en.md](docs/reference.en.md). A Chinese version is available at [docs/reference.zh-CN.md](docs/reference.zh-CN.md).
+For the full manual, configuration reference, and troubleshooting notes, see [docs/reference.en.md](docs/reference.en.md). A Chinese version is available at [docs/reference.zh-CN.md](docs/reference.zh-CN.md). For building other `tmux-*` interactive-environment skills, see [docs/tmux交互式环境skill开发规范.md](docs/tmux交互式环境skill开发规范.md).
 
 ## Platform Notes
 
