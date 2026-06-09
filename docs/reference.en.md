@@ -642,6 +642,26 @@ Then inspect the pane:
 scripts/read.sh 200
 ```
 
+### `stale run marker detected`
+
+`run.sh` found an old `BEGIN` marker in pane history without a matching `END` marker. The usual causes are that a previous `run.sh` command is still running, or that it was interrupted with `Ctrl-C` before the remote wrapper could print its `END`.
+
+If you recently sent `Ctrl-C`, this does not always mean the command is still running; it may only be stale pane history. Recover conservatively:
+
+1. Inspect the current pane:
+
+   ```bash
+   scripts/read.sh 80
+   ```
+
+2. If the pane is clearly back at an ordinary Linux shell prompt, clear tmux pane history once and retry:
+
+   ```bash
+   tmux clear-history -t "${REMOTE_TMUX_TARGET:-remote:0.0}"
+   ```
+
+3. If the pane is not clearly at a shell prompt, or appears to be in MySQL, Redis, Python, Oasis `work>`, a TUI, a continuation prompt, or a still-running foreground command, do not clear history or retry blindly. Keep inspecting, wait, or ask the user to take over.
+
 ### `interactive prompt detected`
 
 The pane appears to be inside a child interactive CLI such as MySQL, psql, Python, Spark shell, redis-cli, mongo shell, sqlite, or an internal prompt such as Oasis `work>`. The agent should not continue sending REPL input through this skill. Ask the user to exit or handle that REPL manually, use the dedicated skill for that CLI, or use a non-interactive command such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`.

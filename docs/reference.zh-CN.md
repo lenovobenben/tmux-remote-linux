@@ -642,6 +642,26 @@ export REMOTE_TMUX_RUN_MARKER_CAPTURE_LINES=10000
 scripts/read.sh 200
 ```
 
+### `stale run marker detected`
+
+`run.sh` 发现历史 pane 输出里有旧的 `BEGIN` marker，但没有对应的 `END` marker。最常见原因是上一条 `run.sh` 还在运行，或者你曾经用 `Ctrl-C` 中断过它，导致远端 wrapper 来不及打印 `END`。
+
+如果刚刚发送过 `Ctrl-C`，这不一定表示命令仍在运行，也可能只是历史残留。恢复时不要猜测：
+
+1. 先读取当前 pane：
+
+   ```bash
+   scripts/read.sh 80
+   ```
+
+2. 如果 pane 明确已经回到普通 Linux shell prompt，可以清理一次 tmux 历史并重试：
+
+   ```bash
+   tmux clear-history -t "${REMOTE_TMUX_TARGET:-remote:0.0}"
+   ```
+
+3. 如果 pane 不是清晰的 shell prompt，或者像是 MySQL、Redis、Python、Oasis `work>`、TUI、续行 prompt、仍在运行的前台命令，不要清理或重试。继续观察、等待，或让用户接管。
+
 ### `interactive prompt detected`
 
 当前 pane 看起来已经在 MySQL、psql、Python、Spark shell、redis-cli、mongo shell、sqlite 等子交互 CLI 里，或者在 Oasis `work>` 这类内部工具 prompt 中。agent 不应通过这个 skill 继续发送 REPL 输入。请用户退出或手动处理该 REPL，使用该 CLI 的专用 skill，或者改用 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e` 这类非交互命令。
