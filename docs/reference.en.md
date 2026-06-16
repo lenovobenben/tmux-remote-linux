@@ -489,13 +489,15 @@ As a soft audit policy, prefer `run.sh` when command results need to be recorded
 
 Agents do not operate REPL-style interactive CLIs through this skill. Typical examples include `mysql>`, `redis-cli`, `psql>`, `spark-shell>`, Python REPL, Node REPL, attached container shells, internal prompts such as Oasis `work>`, or any prompt where state lives inside the current interactive program. Use non-interactive commands instead, such as `mysql -e`, `redis-cli <command>`, `spark-sql -e`, `python -c`, or `node -e`. If a project needs limited automation for one of these CLIs, create a dedicated skill for that CLI; that skill should know how to enter the prompt, run only supported commands, and leave it with the correct raw syntax.
 
-Complex multi-step checks, especially checks that span multiple hosts and include loops, regular expressions, pipes, or nested `ssh`, should not be forced into a very long one-line shell command. Multi-layer quoting passes through the local shell, `run.sh`, the remote shell, a child `bash`, and inner `ssh`, which makes syntax errors likely.
+Complex multi-step checks, especially checks that span multiple hosts and include loops, regular expressions, pipes, here-docs, embedded JSON/SQL/awk, nested `ssh`, or Python code, should not be forced into a very long one-line shell command. Multi-layer quoting passes through the local shell, `run.sh`, the remote shell, a child `bash`, and inner commands, which makes syntax errors likely.
 
-In non-production environments, a more reliable approach is to write a temporary script under `/tmp`, express the logic as normal multi-line shell, bound the output, execute it, and clean it up. For example:
+A more reliable approach is to write the script locally first, express the logic in a normal multi-line file, optionally syntax-check it locally, base64-encode the file, decode it to a unique remote `/tmp` path, execute it with the matching interpreter, preserve the exit code, and clean it up. Shell and Python are the common cases.
+
+Shell example:
 
 ```bash
-tmp="/tmp/tmux-remote-linux-check-$$.sh"
-cat > "$tmp" <<'EOF'
+local_script="$(mktemp -t tmux-remote-linux-check.XXXXXX.sh)"
+cat > "$local_script" <<'EOF'
 #!/usr/bin/env bash
 set -u
 for h in master1 master2 master3; do
@@ -504,11 +506,47 @@ for h in master1 master2 master3; do
   ssh "$h" "ss -lntp | grep 9092 | head -n 5"
 done
 EOF
-bash "$tmp"
-rm -f "$tmp"
+bash -n "$local_script"
+encoded="$(base64 < "$local_script" | tr -d '\n')"
+remote_script="/tmp/$(basename "$local_script")"
+scripts/run.sh "printf '%s' '$encoded' | base64 -d > '$remote_script' && chmod 700 '$remote_script' && bash '$remote_script'; status=\$?; rm -f '$remote_script'; exit \$status"
+rm -f "$local_script"
 ```
 
-Do not write temporary scripts by default in production. Consider doing so only when the user explicitly approves and the script contents, path, and impact are clear.
+Python example:
+
+```bash
+local_script="$(mktemp -t tmux-remote-linux-check.XXXXXX.py)"
+cat > "$local_script" <<'EOF'
+#!/usr/bin/env python3
+import json
+import subprocess
+
+hosts = ["master1", "master2", "master3"]
+for host in hosts:
+    print(f"===== {host} =====")
+    result = subprocess.run(
+        ["ssh", host, "hostname"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=20,
+        check=False,
+    )
+    print(json.dumps({"host": host, "exit": result.returncode, "output": result.stdout[-1000:]}))
+EOF
+python3 -m py_compile "$local_script"
+encoded="$(base64 < "$local_script" | tr -d '\n')"
+remote_script="/tmp/$(basename "$local_script")"
+scripts/run.sh "printf '%s' '$encoded' | base64 -d > '$remote_script' && chmod 700 '$remote_script' && python3 '$remote_script'; status=\$?; rm -f '$remote_script'; exit \$status"
+rm -f "$local_script"
+```
+
+If the remote host might not have `python3`, check the interpreter first with a short `run.sh 'command -v python3 || command -v python'` command and choose deliberately.
+
+For intentionally long-running scripts, transfer the file first with a bounded `run.sh` command, then start it with `send.sh` after confirming the pane context. Keep output bounded with explicit `head`, `tail`, `grep`, or command-specific limits. Do not put secrets in the local script or remote `/tmp` file.
+
+In production, this transfer/execution command still needs the normal per-command approval. The approval explanation should make the script contents, remote path, interpreter, and expected impact clear enough for the user to review.
 
 ## How `run.sh` Works
 

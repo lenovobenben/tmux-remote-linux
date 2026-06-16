@@ -489,13 +489,15 @@ scripts/send.sh 'tail -f /var/log/app.log'
 
 不支持由这个 skill 操作 REPL 式交互命令行。典型例子包括 `mysql>`、`redis-cli`、`psql>`、`spark-shell>`、Python REPL、Node REPL、已经 attach 进去的容器 shell、Oasis `work>` 这类内部工具 prompt，或者任何状态存在于当前交互程序内部的 prompt。请改用非交互命令，例如 `mysql -e`、`redis-cli <command>`、`spark-sql -e`、`python -c`、`node -e`；如果某个项目确实需要对其中一种 CLI 做有限自动化，应创建该 CLI 的专用 skill。专用 skill 要知道如何进入 prompt、只执行受支持命令，并用正确的原始语法退出。
 
-复杂的多步骤检查，尤其是跨多台机器、包含循环、正则、管道和多层 `ssh` 的检查，不适合硬拼成很长的一行 shell。多层引号会同时经过本地 shell、`run.sh`、远端 shell、子 `bash` 和内层 `ssh`，很容易出现语法错误。
+复杂的多步骤检查，尤其是跨多台机器、包含循环、正则、管道、here-doc、内嵌 JSON/SQL/awk、多层 `ssh` 或 Python 代码的检查，不适合硬拼成很长的一行 shell。多层引号会同时经过本地 shell、`run.sh`、远端 shell、子 `bash` 和内层命令，很容易出现语法错误。
 
-在非生产环境中，更稳的做法是写一个临时脚本到 `/tmp`，用普通多行 shell 表达逻辑，限制输出，执行后清理。例如：
+更稳的做法是先在本地写一个临时脚本，用普通多行文件表达逻辑，必要时先在本地做语法检查，再把脚本内容 base64 编码，通过 `run.sh` / `send.sh` 解码到远端唯一的 `/tmp` 路径，用匹配的解释器执行，保留退出码，并在执行后清理。Shell 和 Python 是最常用的两类。
+
+Shell 示例：
 
 ```bash
-tmp="/tmp/tmux-remote-linux-check-$$.sh"
-cat > "$tmp" <<'EOF'
+local_script="$(mktemp -t tmux-remote-linux-check.XXXXXX.sh)"
+cat > "$local_script" <<'EOF'
 #!/usr/bin/env bash
 set -u
 for h in master1 master2 master3; do
@@ -504,11 +506,47 @@ for h in master1 master2 master3; do
   ssh "$h" "ss -lntp | grep 9092 | head -n 5"
 done
 EOF
-bash "$tmp"
-rm -f "$tmp"
+bash -n "$local_script"
+encoded="$(base64 < "$local_script" | tr -d '\n')"
+remote_script="/tmp/$(basename "$local_script")"
+scripts/run.sh "printf '%s' '$encoded' | base64 -d > '$remote_script' && chmod 700 '$remote_script' && bash '$remote_script'; status=\$?; rm -f '$remote_script'; exit \$status"
+rm -f "$local_script"
 ```
 
-生产环境中不要默认写临时脚本。只有用户明确批准，且脚本内容、路径、影响范围都清楚时，才考虑这么做。
+Python 示例：
+
+```bash
+local_script="$(mktemp -t tmux-remote-linux-check.XXXXXX.py)"
+cat > "$local_script" <<'EOF'
+#!/usr/bin/env python3
+import json
+import subprocess
+
+hosts = ["master1", "master2", "master3"]
+for host in hosts:
+    print(f"===== {host} =====")
+    result = subprocess.run(
+        ["ssh", host, "hostname"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=20,
+        check=False,
+    )
+    print(json.dumps({"host": host, "exit": result.returncode, "output": result.stdout[-1000:]}))
+EOF
+python3 -m py_compile "$local_script"
+encoded="$(base64 < "$local_script" | tr -d '\n')"
+remote_script="/tmp/$(basename "$local_script")"
+scripts/run.sh "printf '%s' '$encoded' | base64 -d > '$remote_script' && chmod 700 '$remote_script' && python3 '$remote_script'; status=\$?; rm -f '$remote_script'; exit \$status"
+rm -f "$local_script"
+```
+
+如果不确定远端是否有 `python3`，先用短命令 `run.sh 'command -v python3 || command -v python'` 检查解释器，再明确选择。
+
+如果脚本会长时间运行，优先用有边界的 `run.sh` 完成传输，再确认当前 pane 上下文，用 `send.sh` 启动远端脚本。脚本输出要有明确边界，例如显式使用 `head`、`tail`、`grep` 或命令自己的 limit 参数。不要把密码、token、私钥等秘密写进本地临时脚本或远端 `/tmp` 文件。
+
+生产环境中，这条传输/执行命令仍然必须走逐命令审批。审批说明里应让用户能看清脚本内容、远端路径、解释器和影响范围。
 
 ## `run.sh` 工作原理
 
