@@ -39,6 +39,7 @@ For Codex, before each production command:
    **同意执行请只回复数字** `<digit>`
 
 If the approval command is too long for one line, put only the command in one fenced block. Do not turn script-like work into a long one-liner to fit the format.
+For production approvals, keep commands reviewable; use fenced multi-line blocks for non-trivial commands instead of semicolon-compressed one-liners.
 
 After a matching reply, call the script with one-time approval variables:
 
