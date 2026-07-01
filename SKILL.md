@@ -78,6 +78,8 @@ $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh '<command>'
 
 Use for short, bounded, non-interactive shell checks. It base64-transfers one shell command, runs it in a fresh remote `bash` child, returns only this command's output, prints `[exit N]`, and exits locally with the remote status. State changes such as `cd` and `export` do not persist.
 
+`run.sh` uses BEGIN/END markers as the primary command boundary. By default it also installs a short managed bash prompt, `__31D763DA06_TRL_<counter>_<status>__`, and uses the prompt counter only as a recovery guard when markers are missing or stale. Set `REMOTE_TMUX_PROMPT_GUARD=0` to disable this guard. When enabled, treat `PS1` and `PROMPT_COMMAND` in the managed pane as owned by this skill.
+
 Pass the whole shell command as one quoted argument. This is a transport interface, not permission to build complex one-line programs. If the intended command is really a shell or Python script, use the temporary-script workflow below.
 
 - Query local JSONL audit logs:
@@ -99,12 +101,15 @@ REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40
 REMOTE_TMUX_DETECT_INTERACTIVE=1
+REMOTE_TMUX_PROMPT_GUARD=1
 REMOTE_TMUX_LOG_ENABLED=1
 REMOTE_TMUX_LOG_DIR="$HOME/.codex/tmux-remote-linux/logs"
 REMOTE_TMUX_REQUEST_ID=<optional-stable-id>
 ```
 
 `run.sh` and `send.sh` reduce remote shell history noise when possible, but this is not a security boundary. They write local JSONL audit logs by default under `REMOTE_TMUX_LOG_DIR`; use `logs.sh` to inspect them.
+
+If the pane moves to another Linux shell, for example after user-entered SSH credentials or after `tmux-oasis-cli` logs into an instance, the next `run.sh` will install the managed prompt again if needed. Do not run `run.sh` while the pane is still at a password prompt, MFA prompt, Oasis `work>`, or any non-shell prompt.
 
 Prefer the bundled scripts inside this skill directory so the workflow remains self-contained and portable.
 

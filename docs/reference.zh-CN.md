@@ -309,6 +309,8 @@ base64 -d | bash
 
 随后记录远端命令的退出码，打印 end marker 和退出码。`run.sh` 再从 marker 抓取窗口中找到 begin/end marker，只返回这次命令的输出，并打印 `[exit N]`。本地脚本也会用同样的退出码结束。
 
+默认情况下，`run.sh` 还会在发送 marker wrapper 前安装一个受管 bash prompt：`__31D763DA06_TRL_<counter>_<status>__`。BEGIN/END marker 仍然是主边界；prompt counter 只作为恢复辅助：当 marker 缺失或陈旧时，如果后面出现了新的受管 prompt，`run.sh` 可以判断 shell 已经回到空闲，而不是继续把旧 marker 当作仍在运行的命令。`31D763DA06` 是自然常数 `e` 的十六进制小数点后第 91-100 位；这里只作为固定 magic prefix，不是安全 token。
+
 命令通过 base64 传输，是为了减少嵌套引号、管道、分号、多层 shell 转义带来的问题。命令在远端子 `bash` 中执行，因此 `exit 7` 只会结束子进程，不会关闭当前交互 shell；但也意味着 `cd`、`export` 这类状态变化不会保留到命令结束之后。
 
 默认情况下，`run.sh` 会写一条本地 JSONL 审计事件，包含 request id、解码后的命令、目标 pane、环境、开始时间、结束时间、耗时、退出码和截断后的命令输出。`run.sh` 和 `send.sh` 也会在本地打印 `[request_id ...]`，方便以后把终端输出对应回 JSONL。
@@ -340,6 +342,7 @@ REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40
 REMOTE_TMUX_DETECT_INTERACTIVE=1
+REMOTE_TMUX_PROMPT_GUARD=1
 REMOTE_TMUX_AVOID_REMOTE_HISTORY=1
 REMOTE_TMUX_LOG_ENABLED=1
 REMOTE_TMUX_LOG_DIR="$HOME/.codex/tmux-remote-linux/logs"
@@ -401,6 +404,20 @@ REMOTE_TMUX_PROD_APPROVAL_DIGIT=7
 ### `REMOTE_TMUX_DETECT_INTERACTIVE`
 
 设置为 `1` 时，如果 pane 看起来已经在 MySQL、psql、Python、Spark shell、redis-cli、mongo shell、sqlite 等子交互 CLI 里，`run.sh` 会拒绝执行。默认 `1`。
+
+### `REMOTE_TMUX_PROMPT_GUARD`
+
+`run.sh` 是否安装并使用受管 bash prompt guard。默认 `1`。
+
+启用时，如果当前交互式 bash shell 还没有受管 prompt，`run.sh` 会把 prompt 设置为 `__31D763DA06_TRL_<counter>_<status>__`。BEGIN/END marker 仍然是权威的输出和退出码边界；prompt 只用于在 marker 恢复失败时判断 shell 是否已经回到空闲，以及忽略后面已经出现过受管 prompt 的旧 stale marker。
+
+设置为 `0` 可以保留旧的纯 marker 行为。Prompt guard 当前只支持普通交互式 bash shell。
+
+启用 prompt guard 时，应把托管 pane 中的 `PS1` 和 `PROMPT_COMMAND` 视为由这个 skill 管理。agent 使用该 pane 期间，不要在远端手动改这两个变量。大多数程序不依赖这些交互式 shell 变量，但有些站点 profile、审计 hook、终端标题集成、kube/venv/git prompt 辅助逻辑，或者用户自己的工作流，可能依赖自定义 `PROMPT_COMMAND`。如果目标环境属于这种情况，请设置 `REMOTE_TMUX_PROMPT_GUARD=0`。
+
+如果 pane 切换到了另一个 Linux shell，例如用户手动输入 SSH 密码后进入新机器，或者 `tmux-oasis-cli` 这类专用 adapter 登录到实例并把 pane 留在目标 shell，旧的受管 prompt 不再代表当前 shell。下一次 `run.sh` 会检查当前可见 prompt；如果还不是受管 prompt，就会先在新 shell 中重新安装 `__31D763DA06_TRL_<counter>_<status>__`，然后再发送 BEGIN/END wrapper。不要在 pane 仍处于密码、MFA、Oasis `work>` 或其他非 shell prompt 时调用 `run.sh`。
+
+在生产环境中，prompt guard 意味着进入某个 shell 后第一次获批的 `run.sh` 可能会先初始化受管 prompt，再执行被审阅的命令。如果你不希望 `run.sh` 在生产环境改变 prompt 状态，请设置 `REMOTE_TMUX_PROMPT_GUARD=0` 使用纯 marker 行为。
 
 ### `REMOTE_TMUX_AVOID_REMOTE_HISTORY`
 

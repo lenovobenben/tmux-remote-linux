@@ -18,6 +18,11 @@ max_output_bytes="${REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES:-32768}"
 pending_output_lines="${REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES:-40}"
 detect_interactive="${REMOTE_TMUX_DETECT_INTERACTIVE:-1}"
 avoid_remote_history="${REMOTE_TMUX_AVOID_REMOTE_HISTORY:-1}"
+prompt_guard="${REMOTE_TMUX_PROMPT_GUARD:-1}"
+
+# 31D763DA06 is hexadecimal digits 91-100 after the point in e.
+# It is a fixed magic prefix for the managed prompt, not a security token.
+managed_prompt_prefix="__31D763DA06_TRL"
 
 if [ "$#" -ne 1 ]; then
   echo "usage: $0 '<command>'" >&2
@@ -39,6 +44,15 @@ fi
 if [ "$marker_capture_lines" -lt "$capture_lines" ]; then
   marker_capture_lines="$capture_lines"
 fi
+
+case "$prompt_guard" in
+  0|1)
+    ;;
+  *)
+    echo "REMOTE_TMUX_PROMPT_GUARD must be 0 or 1" >&2
+    exit 2
+    ;;
+esac
 
 limit_output() {
   awk -v max_lines="$max_output_lines" -v max_bytes="$max_output_bytes" '
@@ -90,13 +104,35 @@ EOF
   esac
 }
 
+stale_marker_followed_by_managed_prompt() {
+  local pane_text="$1"
+  local marker="$2"
+
+  printf '%s\n' "$pane_text" | awk -v marker="$marker" -v prefix="$managed_prompt_prefix" '
+    index($0, marker) > 0 { seen_marker = 1; next }
+    seen_marker && index($0, prefix "_") > 0 { found_prompt = 1 }
+    END { exit found_prompt ? 0 : 1 }
+  '
+}
+
 detect_stale_run() {
   local recent b end_marker
-  recent="$(tmux capture-pane -t "$target" -p -S "-$marker_capture_lines")"
+  recent="$(tmux capture-pane -J -t "$target" -p -S "-$marker_capture_lines")"
   while IFS= read -r b; do
     [ -z "$b" ] && continue
     end_marker="${b/BEGIN__/END__}"
     if ! printf '%s\n' "$recent" | grep -qF "$end_marker"; then
+      if [ "$prompt_guard" = "1" ]; then
+        if stale_marker_followed_by_managed_prompt "$recent" "$b"; then
+          continue
+        fi
+        if ensure_managed_prompt >/dev/null; then
+          recent="$(tmux capture-pane -J -t "$target" -p -S "-$marker_capture_lines")"
+          if stale_marker_followed_by_managed_prompt "$recent" "$b"; then
+            continue
+          fi
+        fi
+      fi
       cat >&2 <<EOF
 [run.sh] stale run marker detected: $b
 [run.sh] A previous run.sh command may still be running or its output was lost.
@@ -107,6 +143,87 @@ EOF
   done < <(printf '%s\n' "$recent" | grep -oE '__CODEX_RUN_[0-9]+_[0-9]+_BEGIN__' || true)
 }
 
+latest_managed_prompt_state() {
+  tmux capture-pane -J -t "$target" -p -S "-$marker_capture_lines" | awk -v prefix="$managed_prompt_prefix" '
+    {
+      line = $0
+      regex = prefix "_[0-9]+_[0-9]+__"
+      while (match(line, regex)) {
+        token = substr(line, RSTART, RLENGTH)
+        value = token
+        sub("^" prefix "_", "", value)
+        sub("__$", "", value)
+        split(value, parts, "_")
+        counter = parts[1]
+        status = parts[2]
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+    END {
+      if (counter != "" && status != "") {
+        print counter, status
+      }
+    }
+  '
+}
+
+current_managed_prompt_state() {
+  tmux capture-pane -J -t "$target" -p -S "-20" | awk -v prefix="$managed_prompt_prefix" '
+    NF { last = $0 }
+    END {
+      regex = prefix "_[0-9]+_[0-9]+__"
+      if (match(last, regex)) {
+        token = substr(last, RSTART, RLENGTH)
+        value = token
+        sub("^" prefix "_", "", value)
+        sub("__$", "", value)
+        split(value, parts, "_")
+        print parts[1], parts[2]
+      }
+    }
+  '
+}
+
+ensure_managed_prompt() {
+  local prompt_state init_command
+
+  prompt_state="$(current_managed_prompt_state)"
+  if [ -n "$prompt_state" ]; then
+    printf '%s\n' "$prompt_state"
+    return 0
+  fi
+
+  init_command="if [ -z \"\${BASH_VERSION:-}\" ]; then "
+  init_command+="echo '[run.sh] managed prompt requires an interactive bash shell' >&2; "
+  init_command+="else export __TRL_COUNTER=0; "
+  init_command+="PROMPT_COMMAND='__trl_status=\$?; "
+  init_command+="__TRL_COUNTER=\$((\${__TRL_COUNTER:-0} + 1)); "
+  init_command+="PS1=\"${managed_prompt_prefix}_\${__TRL_COUNTER}_\${__trl_status}__ \"'; fi"
+
+  send_remote_command "$init_command"
+  for ((i = 0; i <= begin_timeout_seconds; i++)); do
+    sleep 1
+    prompt_state="$(latest_managed_prompt_state)"
+    if [ -n "$prompt_state" ]; then
+      printf '%s\n' "$prompt_state"
+      return 0
+    fi
+  done
+
+  echo "[run.sh] managed prompt initialization did not produce a bash prompt token" >&2
+  echo "[run.sh] prompt guard currently supports ordinary interactive bash shells only" >&2
+  return 1
+}
+
+managed_prompt_counter_advanced() {
+  local previous_counter="$1"
+  local prompt_state counter
+
+  prompt_state="$(latest_managed_prompt_state)"
+  counter="${prompt_state%% *}"
+  [[ "$counter" =~ ^[0-9]+$ ]] && [ "$counter" -gt "$previous_counter" ]
+}
+
 command_text="$1"
 request_id="$(remote_tmux_log_request_id)"
 
@@ -114,15 +231,27 @@ if [ "$detect_interactive" != "0" ]; then
   detect_interactive_prompt
 fi
 
+remote_tmux_confirm_if_production "$command_text"
+
+started_at="$(remote_tmux_log_now)"
+started_ms="$(remote_tmux_log_epoch_ms)"
+
 detect_stale_run
 
-remote_tmux_confirm_if_production "$command_text"
+prompt_counter_before=""
+if [ "$prompt_guard" = "1" ]; then
+  prompt_state_before="$(ensure_managed_prompt)" || {
+    ended_at="$(remote_tmux_log_now)"
+    ended_ms="$(remote_tmux_log_epoch_ms)"
+    remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "prompt_init_not_found" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
+    exit 124
+  }
+  prompt_counter_before="${prompt_state_before%% *}"
+fi
 
 marker="CODEX_RUN_$(date +%s)_$$"
 begin="__${marker}_BEGIN__"
 end="__${marker}_END__"
-started_at="$(remote_tmux_log_now)"
-started_ms="$(remote_tmux_log_epoch_ms)"
 
 encoded_command="$(printf '%s' "$command_text" | base64 | tr -d '\n')"
 inner_command="printf '\n%s\n' '$begin'; printf '%s' '$encoded_command' | base64 -d | bash; __codex_status=\$?; printf '\n%s:%s\n' '$end' \"\$__codex_status\""
@@ -147,6 +276,12 @@ fi
 if ! printf '%s\n' "$captured" | grep -Fxq "$begin"; then
   ended_at="$(remote_tmux_log_now)"
   ended_ms="$(remote_tmux_log_epoch_ms)"
+  if [ "$prompt_guard" = "1" ] && managed_prompt_counter_advanced "$prompt_counter_before"; then
+    remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "begin_not_found_shell_idle" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
+    echo "[run.sh] begin marker not found, but the managed prompt returned; shell appears idle" >&2
+    echo "[run.sh] command output and exit status could not be recovered from markers" >&2
+    exit 124
+  fi
   remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "begin_not_found" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
   echo "[run.sh] begin marker not found yet: $begin" >&2
   echo "[run.sh] not printing pane history; use read.sh 40 if you need to inspect the current pane" >&2
@@ -175,6 +310,12 @@ if ! printf '%s\n' "$captured" | grep -q "^${end}:"; then
   fi
   ended_at="$(remote_tmux_log_now)"
   ended_ms="$(remote_tmux_log_epoch_ms)"
+  if [ "$prompt_guard" = "1" ] && managed_prompt_counter_advanced "$prompt_counter_before"; then
+    remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "end_not_found_shell_idle" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 "$pending_output"
+    echo "[run.sh] end marker not found, but the managed prompt returned; shell appears idle" >&2
+    echo "[run.sh] command output and exit status could not be fully recovered from markers" >&2
+    exit 124
+  fi
   remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "pending" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 "$pending_output"
   echo "[run.sh] end marker not found yet; command may still be running" >&2
   exit 124

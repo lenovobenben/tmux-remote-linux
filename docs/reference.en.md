@@ -309,6 +309,8 @@ base64 -d | bash
 
 It then records the remote exit code and prints the end marker and exit code. `run.sh` searches a marker capture window for the begin/end markers, returns only this command's output, and prints `[exit N]`. The local script exits with the same code.
 
+By default, `run.sh` also installs a managed bash prompt, `__31D763DA06_TRL_<counter>_<status>__`, before sending the marker wrapper. BEGIN/END markers remain the primary boundary. The prompt counter is used only as a recovery guard: if markers are missing or stale but a later managed prompt appears, `run.sh` can tell that the shell returned to idle instead of treating the old marker as a still-running command. `31D763DA06` is hexadecimal digits 91-100 after the point in Euler's number `e`; it is a fixed magic prefix, not a security token.
+
 Commands are transferred through base64 to reduce issues with nested quotes, pipes, semicolons, and multiple shell-escaping layers. The command runs in a child remote `bash`, so `exit 7` only exits the child process and does not close the current interactive shell. It also means state changes such as `cd` and `export` do not persist after the command finishes.
 
 By default, `run.sh` writes a local JSONL audit event with the request id, decoded command, target, environment, start time, end time, duration, exit code, and a truncated copy of the captured output. `run.sh` and `send.sh` also print `[request_id ...]` locally so terminal output can be matched back to JSONL later.
@@ -340,6 +342,7 @@ REMOTE_TMUX_RUN_MAX_OUTPUT_LINES=200
 REMOTE_TMUX_RUN_MAX_OUTPUT_BYTES=32768
 REMOTE_TMUX_RUN_PENDING_OUTPUT_LINES=40
 REMOTE_TMUX_DETECT_INTERACTIVE=1
+REMOTE_TMUX_PROMPT_GUARD=1
 REMOTE_TMUX_AVOID_REMOTE_HISTORY=1
 REMOTE_TMUX_LOG_ENABLED=1
 REMOTE_TMUX_LOG_DIR="$HOME/.codex/tmux-remote-linux/logs"
@@ -401,6 +404,20 @@ If `run.sh` finds the begin marker but not the end marker, it prints at most thi
 ### `REMOTE_TMUX_DETECT_INTERACTIVE`
 
 When set to `1`, `run.sh` refuses to execute if the pane appears to be inside a child interactive CLI such as MySQL, psql, Python, Spark shell, redis-cli, mongo shell, or sqlite. Default: `1`.
+
+### `REMOTE_TMUX_PROMPT_GUARD`
+
+Whether `run.sh` installs and uses the managed bash prompt guard. Default: `1`.
+
+When enabled, `run.sh` sets the current interactive bash prompt to `__31D763DA06_TRL_<counter>_<status>__` if it is not already present. BEGIN/END markers remain the authoritative output and exit-code boundary. The prompt is used only to tell whether the shell returned to idle when marker recovery fails, and to ignore old stale markers that are followed by a later managed prompt.
+
+Set this to `0` to preserve the older marker-only behavior. Prompt guard currently supports ordinary interactive bash shells only.
+
+When prompt guard is enabled, treat `PS1` and `PROMPT_COMMAND` in the managed pane as owned by this skill. Do not manually customize them in that pane while the agent is using it. Most programs do not depend on these interactive-shell variables, but some site profiles, audit hooks, terminal-title integrations, kube/venv/git prompt helpers, or user workflows may rely on a custom `PROMPT_COMMAND`. If that applies to the target environment, set `REMOTE_TMUX_PROMPT_GUARD=0`.
+
+If the pane moves to another Linux shell, for example after the user manually enters SSH credentials or after a dedicated adapter such as `tmux-oasis-cli` logs into an instance and leaves the pane at the target shell, the old managed prompt is no longer relevant. The next `run.sh` checks the current visible prompt; if it is not already managed, it installs `__31D763DA06_TRL_<counter>_<status>__` again in the new shell before sending the BEGIN/END wrapper. Do not call `run.sh` while the pane is still at a password prompt, MFA prompt, Oasis `work>`, or another non-shell prompt.
+
+In production, prompt guard means the first approved `run.sh` after entering a shell may also initialize the managed prompt before the reviewed command. If you do not want `run.sh` to change prompt state in production, set `REMOTE_TMUX_PROMPT_GUARD=0` and use marker-only behavior.
 
 ### `REMOTE_TMUX_AVOID_REMOTE_HISTORY`
 

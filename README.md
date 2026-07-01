@@ -93,6 +93,8 @@ Most users only need to remember three things:
 - For long, script-like, or heavily quoted logic, do not ask the agent to build a huge one-liner. The preferred workflow is: generate a local temporary script, usually `.sh` or `.py`, optionally syntax-check it locally, base64 it through `run.sh`/`send.sh` into a unique remote `/tmp` path, execute it with the matching interpreter such as `bash` or `python3`, preserve the exit code, and clean it up.
 - Commands sent by `run.sh` and `send.sh` are logged locally as JSONL under `~/.codex/tmux-remote-linux/logs` by default; `run.sh` records output and exit code, while `send.sh` records only that input was sent.
 - Use `scripts/logs.sh last`, `scripts/logs.sh failures`, `scripts/logs.sh grep <pattern>`, or `scripts/logs.sh show <request_id>` to query local logs.
+- `run.sh` still uses BEGIN/END markers as the primary command boundary. By default it also installs a short managed bash prompt, `__31D763DA06_TRL_<counter>_<status>__`, to detect whether the shell has returned to idle when marker recovery fails. Set `REMOTE_TMUX_PROMPT_GUARD=0` to disable this guard.
+- When prompt guard is enabled, do not manually customize `PS1` or `PROMPT_COMMAND` in the managed pane. If the remote environment depends on custom prompt hooks, set `REMOTE_TMUX_PROMPT_GUARD=0`. After manually SSHing or using another adapter to enter a different Linux shell, the next `run.sh` will install the managed prompt again.
 
 If the pane is inside a non-shell CLI such as `mysql>`, `python>>>`, `spark-sql>`, or an internal tool prompt, use a dedicated skill for that CLI. The dedicated skill should know how to enter and leave its own prompt and should send raw CLI syntax, not shell-wrapped commands.
 
