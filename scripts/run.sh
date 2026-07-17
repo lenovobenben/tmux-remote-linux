@@ -185,7 +185,7 @@ current_managed_prompt_state() {
 }
 
 ensure_managed_prompt() {
-  local prompt_state init_command
+  local prompt_state init_command readonly_marker
 
   prompt_state="$(current_managed_prompt_state)"
   if [ -n "$prompt_state" ]; then
@@ -193,16 +193,25 @@ ensure_managed_prompt() {
     return 0
   fi
 
+  readonly_marker="${managed_prompt_prefix}_PROMPT_COMMAND_READONLY_$$_${RANDOM}__"
   init_command="if [ -z \"\${BASH_VERSION:-}\" ]; then "
   init_command+="echo '[run.sh] managed prompt requires an interactive bash shell' >&2; "
+  init_command+="else if readonly -p 2>/dev/null | command grep -Eq '^declare -[^ ]*r[^ ]* PROMPT_COMMAND(=|$)'; then "
+  init_command+="printf '%s\\n' '$readonly_marker'; "
   init_command+="else export __TRL_COUNTER=0; "
   init_command+="PROMPT_COMMAND='__trl_status=\$?; "
   init_command+="__TRL_COUNTER=\$((\${__TRL_COUNTER:-0} + 1)); "
-  init_command+="PS1=\"${managed_prompt_prefix}_\${__TRL_COUNTER}_\${__trl_status}__ \"'; fi"
+  init_command+="PS1=\"${managed_prompt_prefix}_\${__TRL_COUNTER}_\${__trl_status}__ \"'; fi; fi"
 
   send_remote_command "$init_command"
   for ((i = 0; i <= begin_timeout_seconds; i++)); do
     sleep 1
+    if tmux capture-pane -J -t "$target" -p -S "-$marker_capture_lines" | grep -Fxq "$readonly_marker"; then
+      echo "[run.sh] PROMPT_COMMAND is readonly in the current bash" >&2
+      echo "[run.sh] managed prompt guard cannot be installed" >&2
+      echo "[run.sh] start and verify a clean bash, or explicitly use REMOTE_TMUX_PROMPT_GUARD=0" >&2
+      return 2
+    fi
     prompt_state="$(latest_managed_prompt_state)"
     if [ -n "$prompt_state" ]; then
       printf '%s\n' "$prompt_state"
@@ -240,13 +249,20 @@ detect_stale_run
 
 prompt_counter_before=""
 if [ "$prompt_guard" = "1" ]; then
-  prompt_state_before="$(ensure_managed_prompt)" || {
+  if prompt_state_before="$(ensure_managed_prompt)"; then
+    prompt_counter_before="${prompt_state_before%% *}"
+  else
+    prompt_init_status=$?
     ended_at="$(remote_tmux_log_now)"
     ended_ms="$(remote_tmux_log_epoch_ms)"
-    remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "prompt_init_not_found" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
+    if [ "$prompt_init_status" -eq 2 ]; then
+      log_status="prompt_command_readonly"
+    else
+      log_status="prompt_init_not_found"
+    fi
+    remote_tmux_log_run_event "run.sh" "$request_id" "$target" "$REMOTE_TMUX_ENV" "$command_text" "$log_status" "$started_at" "$ended_at" "$((ended_ms - started_ms))" 124 ""
     exit 124
-  }
-  prompt_counter_before="${prompt_state_before%% *}"
+  fi
 fi
 
 marker="CODEX_RUN_$(date +%s)_$$"

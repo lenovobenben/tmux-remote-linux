@@ -80,6 +80,8 @@ Use for short, bounded, non-interactive shell checks. It base64-transfers one sh
 
 `run.sh` uses BEGIN/END markers as the primary command boundary. By default it also installs a short managed bash prompt, `__31D763DA06_TRL_<counter>_<status>__`, and uses the prompt counter only as a recovery guard when markers are missing or stale. Set `REMOTE_TMUX_PROMPT_GUARD=0` to disable this guard. When enabled, treat `PS1` and `PROMPT_COMMAND` in the managed pane as owned by this skill.
 
+If `run.sh` reports that `PROMPT_COMMAND` is readonly, it will stop before running the requested command. Start and verify a clean bash, then retry. If a clean bash is unavailable or still incompatible, explicitly set `REMOTE_TMUX_PROMPT_GUARD=0` to fall back to BEGIN/END markers without the managed prompt guard.
+
 Pass the whole shell command as one quoted argument. This is a transport interface, not permission to build complex one-line programs. If the intended command is really a shell or Python script, use the temporary-script workflow below.
 
 - Query local JSONL audit logs:
