@@ -23,23 +23,30 @@ export REMOTE_TMUX_ENV=non-production
 
 Do not infer this value. Ask if it is not set or explicitly provided. When the user selects an environment, briefly recommend detaching the managed tmux session after setup (`Ctrl-b d`) and re-attaching only for secrets or intentional takeover.
 
-In `production`, every `send.sh` or `run.sh` command needs explicit user approval. Remind the user that AI can misunderstand shell context, aliases, credentials, kubeconfigs, current directories, and blast radius; the user is responsible for each approved command.
+In `production`, every `send.sh` or `run.sh` submission needs explicit user approval. A submission may contain a reviewed batch of commands for the same target and task; one digit approves the entire displayed batch. Remind the user that AI can misunderstand shell context, aliases, credentials, kubeconfigs, current directories, and blast radius; the user is responsible for each approved command.
 
 Production chat approval policy for Codex:
 
-For Codex, before each production command:
+For Codex, before each production submission:
 
-1. Generate a fresh random digit from `0` to `9`.
-2. Show the target, exact command, and one concise Chinese explanation. For temporary-script transfer/execution, also show the script content or a reviewable summary, remote path, and interpreter.
-3. Ask the user to reply with only the digit. If the reply is not exactly that digit, do not execute.
-4. Use this compact format:
-   **生产确认**：**目标** `remote:0.0`
-   **说明**：`<one concise Chinese sentence>`
-   **命令**：`<command>`
-   **同意执行请只回复数字** `<digit>`
+1. Gather the commands already determined for the same target and task into one batch. Do not ask for one digit per line when those commands can be reviewed together. Commands that depend on interpreting earlier output belong in a later batch once determined.
+2. Generate a fresh random digit from `0` to `9` for the whole batch.
+3. Show the target, exact batch, and one concise Chinese explanation of its purpose and impact. Always show commands in a fenced `bash` block, never inline. Put separate commands on separate lines; wrap long pipelines with shell line continuations. Do not compress a batch with semicolons. A genuinely single simple command may occupy one line inside the block; do not invent extra commands just to make it multi-line.
+4. For temporary-script transfer/execution, also show the full reviewable script content, remote path, and interpreter. The digit covers the displayed script and its specified transfer, execution, and cleanup.
+5. Ask the user to reply with only the digit. If the reply is not exactly that digit, do not execute. Use this format:
 
-If the approval command is too long for one line, put only the command in one fenced block. Do not turn script-like work into a long one-liner to fit the format.
-For production approvals, keep commands reviewable; use fenced multi-line blocks for non-trivial commands instead of semicolon-compressed one-liners.
+````markdown
+**生产确认**：**目标** `remote:0.0`
+**说明**：<本批命令的目的和影响，一句中文>
+**命令（整批审核）**：
+```bash
+hostname
+pwd
+```
+**同意执行整批命令请只回复数字** `<digit>`
+````
+
+Submit a short non-interactive batch to `run.sh` as one quoted argument preserving its newlines, so the script confirms the whole batch once. For complex logic, use the temporary-script workflow below and review the multi-line script together. Do not split an approved batch into separate `run.sh` / `send.sh` calls using the same digit. Keep execution serial on the target pane. State-changing or interactive steps that require a new context check must remain separate submissions.
 
 After a matching reply, call the script with one-time approval variables:
 
@@ -51,7 +58,7 @@ REMOTE_TMUX_COMMAND_EXPLANATION='<Chinese explanation shown to the user>' \
 $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh '<command>'
 ```
 
-Approval is per command. Do not reuse digits or batch unrelated production commands. Never set `REMOTE_TMUX_PROD_APPROVAL_EXPECTED_DIGIT`, `REMOTE_TMUX_PROD_APPROVAL_DIGIT`, or `REMOTE_TMUX_COMMAND_EXPLANATION` unless the user replied with the matching digit in this conversation.
+Approval is per displayed batch and covers only its exact commands, order, target, and stated context. Do not reuse approval for another submission, retry, added or changed command, or changed target/context; show the new batch and obtain a fresh digit. Do not batch unrelated tasks or add commands after approval. Never set `REMOTE_TMUX_PROD_APPROVAL_EXPECTED_DIGIT`, `REMOTE_TMUX_PROD_APPROVAL_DIGIT`, or `REMOTE_TMUX_COMMAND_EXPLANATION` unless the user replied with the matching digit in this conversation.
 
 - Read recent remote terminal output:
 
@@ -146,7 +153,7 @@ $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh "printf '%s' '$encoded' | b
 - Only send `Ctrl-C`, `pkill`, `kill`, `umount`, `helm upgrade`, `kubectl delete`, or similar disruptive commands when the user asks, clearly approves, or the terminal is unusable and recovery is necessary.
 - If a pending `run.sh` was interrupted and later reports a stale marker, use `read.sh`. If the pane is clearly back at a normal Linux shell prompt, it is acceptable to clear pane history once with `tmux clear-history -t "${REMOTE_TMUX_TARGET:-remote:0.0}"` and retry.
 - Treat destructive or hard-to-reverse operations as requiring explicit confirmation. This includes deletion, truncation, overwrites, cache clearing, service restarts, and test-data cleanup.
-- In production, every command needs the chat approval flow above, even if it looks read-only. Do not rely on command prefixes to decide business risk.
+- In production, every submission needs the batch chat approval flow above, even if all commands look read-only. Do not rely on command prefixes to decide business risk.
 - If a command opens a continuation prompt such as `>`, recover with `tmux send-keys -t "$REMOTE_TMUX_TARGET" C-c` only after confirming it is an accidental broken shell state.
 - Never edit local repository code unless the user explicitly asks. This skill is for remote terminal operation.
 

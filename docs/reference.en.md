@@ -22,7 +22,7 @@ This project turns that terminal into a narrow operation channel:
 - send one command
 - run one short command and return only that command's output and exit code
 - require an explicit production or non-production environment choice before use
-- require human approval for every production command
+- require human approval for each production submission, including a reviewed multi-line batch
 
 The scripts are intentionally small. They do not manage SSH keys, bastion sessions, Kubernetes credentials, or server inventories.
 
@@ -214,11 +214,11 @@ This is mandatory. If `REMOTE_TMUX_ENV` is missing or invalid, all scripts refus
 
 ### Production Mode
 
-In production mode, every command sent through `send.sh` or `run.sh` pauses for local human approval.
+In production mode, every submission through `send.sh` or `run.sh` requires human approval. One submission can contain a reviewed multi-line batch for the same target and task.
 
 The default is not to execute. In normal CLI use, the script displays a random digit from 0 to 9. The command is sent to the tmux pane only after the user enters that digit.
 
-When Codex or another chat-style agent is using the skill, the agent should first show the target pane, the exact command, a Chinese explanation of what the command does, and a fresh random digit. Keep the approval prompt compact: put the target on the production confirmation line, and put the explanation, command, and approval digit each on its own line. Use Markdown bold labels and inline code for highlighting. Do not use HTML tags or inline CSS, because some terminal renderers print them literally. The user only needs to reply with that digit to approve that one command. The agent can then pass the digit and explanation as one-time approval parameters to the script.
+When Codex or another chat-style agent is using the skill, gather already determined commands for the same target and task into one batch. Always show the exact commands in a fenced `bash` block, one command per line, wrapping long pipelines with shell line continuations instead of semicolon compression. A genuinely single simple command may occupy one line inside the block. Show the target, a concise Chinese explanation, and a fresh random digit for the whole batch. Use Markdown labels, not HTML or CSS. One matching reply approves the entire block, passed with its newlines as one quoted argument to one `run.sh` invocation. Complex logic uses a reviewed temporary script instead. Do not reuse the digit across separate calls. Commands that depend on interpreting earlier results are reviewed later; additions, changes, retries, or changed target/context require a new batch and digit. State-changing or interactive steps needing a new context check remain separate submissions. See `SKILL.md` for the exact chat format.
 
 Normal CLI interactive confirmation prints an obvious warning with `!!!`. When a chat-style agent has already shown the production approval in chat, the script does not repeat those warnings. If a pane may affect real users, real data, online infrastructure, billing, security state, or any other production system, use production mode.
 
@@ -563,7 +563,7 @@ If the remote host might not have `python3`, check the interpreter first with a 
 
 For intentionally long-running scripts, transfer the file first with a bounded `run.sh` command, then start it with `send.sh` after confirming the pane context. Keep output bounded with explicit `head`, `tail`, `grep`, or command-specific limits. Do not put secrets in the local script or remote `/tmp` file.
 
-In production, this transfer/execution command still needs the normal per-command approval. The approval explanation should make the script contents, remote path, interpreter, and expected impact clear enough for the user to review.
+In production, this transfer/execution command still needs the normal batch approval. The approval explanation should make the script contents, remote path, interpreter, and expected impact clear enough for the user to review.
 
 ## How `run.sh` Works
 
@@ -599,9 +599,9 @@ If the begin marker is not found, `run.sh` waits up to `REMOTE_TMUX_RUN_BEGIN_TI
 - Beware stale panes. The host shown in the pane may no longer be the host you think it is.
 - Beware aliases, shell functions, environment variables, and virtual environments.
 - In production, do not type or reply with the approval digit if you do not understand the command and its impact.
-- Every production command should be approved separately. Do not judge risk only by the command prefix; shell context, kubeconfig, aliases, environment variables, and business logic can change the actual impact.
+- Every production submission must be approved; already determined commands for the same target and task should be reviewed together in one multi-line batch. Do not judge risk only by the command prefix; shell context, kubeconfig, aliases, environment variables, and business logic can change the actual impact.
 - Use `send.sh` for state-changing or long-running shell commands, and `run.sh` for bounded inspection commands. REPL-style interactive CLIs are not operated by this skill.
-- Avoid multi-line production operations through this tool. Complex procedures should be performed by the user directly in the terminal.
+- Use multi-line blocks for production batch review. Execute short non-interactive batches with one `run.sh` call; use the temporary-script workflow for complex logic.
 - Do not treat this project as a permission system. It is a local safety guard, not a security boundary.
 
 High-risk commands require extra care, including but not limited to:

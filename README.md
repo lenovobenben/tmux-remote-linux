@@ -120,7 +120,7 @@ If your pane is not `remote:0.0`, tell the AI the correct target, for example `r
 
 ## Production Use
 
-In production, every command must be approved by you before it is sent to tmux. The AI should show the target, environment, exact command, and a one-digit approval challenge. Only reply with that digit if you understand and approve that exact command.
+In production, review commands for the same target and task together as a batch. The AI must show the exact commands in a fenced shell block, with separate commands on separate lines, plus the target, explanation, and one-digit approval challenge. One reply approves the entire displayed batch, submitted once. Added or changed commands, retries, or changed target/context require a new batch and digit. Commands that depend on interpreting earlier output are reviewed later once determined.
 
 Do not allow an AI tool to set production approval environment variables by itself. They are only a relay of your explicit approval.
 
