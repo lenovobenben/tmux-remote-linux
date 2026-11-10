@@ -218,9 +218,48 @@ In production mode, every submission through `send.sh` or `run.sh` requires huma
 
 The default is not to execute. In normal CLI use, the script displays a random digit from 0 to 9. The command is sent to the tmux pane only after the user enters that digit.
 
-When Codex or another chat-style agent is using the skill, gather already determined commands for the same target and task into one batch. Always show the exact commands in a fenced `bash` block, one command per line, wrapping long pipelines with shell line continuations instead of semicolon compression. A genuinely single simple command may occupy one line inside the block. Show the target, a concise Chinese explanation, and a fresh random digit for the whole batch. Use Markdown labels, not HTML or CSS. One matching reply approves the entire block, passed with its newlines as one quoted argument to one `run.sh` invocation. Complex logic uses a reviewed temporary script instead. Do not reuse the digit across separate calls. Commands that depend on interpreting earlier results are reviewed later; additions, changes, retries, or changed target/context require a new batch and digit. State-changing or interactive steps needing a new context check remain separate submissions. See `SKILL.md` for the exact chat format.
+When Codex or another chat-style agent is using the skill, gather already determined commands for the same target and task into one batch. Always show the exact commands in a fenced `bash` block, one command per line, wrapping long pipelines with shell line continuations instead of semicolon compression. A genuinely single simple command may occupy one line inside the block. Show the target, a concise Chinese explanation, and a fresh random digit for the whole batch. Use Markdown labels, not HTML or CSS. The reply must start with the matching digit alone on the first line. A digit-only reply is valid. Any accompanying text can start on the next line or after any number of blank lines. Read the full reply before acting. Use business context and notes to interpret results, hypotheses to guide verification, and directions to plan the relevant step. With valid approval, submit the exact reviewed batch in the reviewed context. If the user requests a recheck, the same approval applies once the batch is confirmed to be executable as reviewed. Honor an explicit pause or cancellation at the scope specified, even with a matching digit. The user can also send context, notes, questions, or corrections separately while the production batch awaits approval. Carry forward the objective, constraints, and findings that still apply when replanning. Pass the approved batch with its newlines as one quoted argument to one `run.sh` invocation. Relay only the digit to the script, never the accompanying text. Complex logic uses a reviewed temporary script instead. Do not reuse the digit across separate calls. Commands that depend on interpreting earlier results are reviewed later; additions, changes, retries, or changed target/context require a new batch and digit. State-changing or interactive steps needing a new context check remain separate submissions. See `SKILL.md` for the exact chat format.
 
 Normal CLI interactive confirmation prints an obvious warning with `!!!`. When a chat-style agent has already shown the production approval in chat, the script does not repeat those warnings. If a pane may affect real users, real data, online infrastructure, billing, security state, or any other production system, use production mode.
+
+#### Chat Approval Examples
+
+Suppose the approval digit for the current batch is `5`. Replying with `5` alone approves the reviewed batch.
+
+**Approve this batch and add context for the next step**
+
+```text
+5
+This cluster runs batch jobs overnight. Next, focus on consumer lag.
+```
+
+The agent executes the reviewed batch as shown and uses the note to interpret the results and plan the next step.
+
+**Approve this batch after a recheck**
+
+```text
+5
+Please recheck this batch, then run it.
+```
+
+If the batch can proceed as reviewed, the agent uses the same approval. If the recheck requires changes, the agent shows the full revised batch and asks for a new digit.
+
+**Ask for a review while approval is pending**
+
+```text
+Let's take another look at this batch.
+```
+
+The batch awaits approval. The agent can review the commands and discuss them with you.
+
+**Pause the current batch**
+
+```text
+5
+Pause this batch and wait for me to confirm.
+```
+
+The agent follows the explicit pause, even though the digit matches.
 
 ### Non-Production Mode
 

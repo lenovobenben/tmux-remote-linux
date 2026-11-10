@@ -120,7 +120,7 @@ If your pane is not `remote:0.0`, tell the AI the correct target, for example `r
 
 ## Production Use
 
-In production, review commands for the same target and task together as a batch. The AI must show the exact commands in a fenced shell block, with separate commands on separate lines, plus the target, explanation, and one-digit approval challenge. One reply approves the entire displayed batch, submitted once. Added or changed commands, retries, or changed target/context require a new batch and digit. Commands that depend on interpreting earlier output are reviewed later once determined.
+In production, review commands for the same target and task together as a batch. The AI must show the exact commands in a fenced shell block, with separate commands on separate lines, plus the target, explanation, and one-digit approval challenge. In chat, reply with the matching digit alone on the first line. Business context, notes, and guidance can start on the next line or after any number of blank lines. The digit approves one submission of the displayed batch. The agent reads the full reply, uses notes to interpret results, and applies guidance when planning later steps. If you ask for a recheck, the same approval applies when the batch can proceed as reviewed. An explicit pause or cancellation applies even with a matching digit. You can also send context or ask questions separately while the batch awaits approval. Added or changed commands, retries, or changed target/context require a new batch and digit. Commands that depend on interpreting earlier output are reviewed later once determined.
 
 Do not allow an AI tool to set production approval environment variables by itself. They are only a relay of your explicit approval.
 

@@ -33,7 +33,7 @@ For Codex, before each production submission:
 2. Generate a fresh random digit from `0` to `9` for the whole batch.
 3. Show the target, exact batch, and one concise Chinese explanation of its purpose and impact. Always show commands in a fenced `bash` block, never inline. Put separate commands on separate lines; wrap long pipelines with shell line continuations. Do not compress a batch with semicolons. A genuinely single simple command may occupy one line inside the block; do not invent extra commands just to make it multi-line.
 4. For temporary-script transfer/execution, also show the full reviewable script content, remote path, and interpreter. The digit covers the displayed script and its specified transfer, execution, and cleanup.
-5. Ask the user to reply with only the digit. If the reply is not exactly that digit, do not execute. Use this format:
+5. Ask the user to put the matching digit alone on the first line, starting at the first character. A reply containing only the digit is valid. Any accompanying text may begin on the next line or after any number of blank lines. A wrong or missing digit, leading whitespace, or any other characters on the digit line do not approve execution. Use this format:
 
 ````markdown
 **生产确认**：**目标** `remote:0.0`
@@ -43,8 +43,17 @@ For Codex, before each production submission:
 hostname
 pwd
 ```
-**同意执行整批命令请只回复数字** `<digit>`
+**同意执行整批命令请在首行单独回复数字** `<digit>`
+可从第二行起补充业务背景、备注或后续方向，空行可省略。
 ````
+
+Treat approval as a checkpoint within the ongoing task. Read the full reply before submitting anything. Use business context, observations, and the user's reasoning to interpret results. Treat hypotheses as leads to verify and directions as instructions for the relevant step. Carry forward the objective, constraints, and findings that still apply.
+
+- With a valid digit, submit the exact reviewed batch in the reviewed context. Use background, notes, and guidance for later steps when interpreting results and planning the next step. If the user asks for a recheck before execution, use the same approval once the recheck confirms the batch can proceed as reviewed.
+- Honor an explicit pause or cancellation at the scope the user specifies, even with a matching digit. If the commands, script, target, or execution context need to change, show the revised batch in full and obtain a fresh digit.
+- While a production batch awaits approval, the user can also send context, notes, questions, or corrections in a separate message. Incorporate that information and continue any work already authorized. Submit the pending batch only after valid approval.
+
+Pass only the validated digit to the script. Keep all accompanying text in the conversation.
 
 Submit a short non-interactive batch to `run.sh` as one quoted argument preserving its newlines, so the script confirms the whole batch once. For complex logic, use the temporary-script workflow below and review the multi-line script together. Do not split an approved batch into separate `run.sh` / `send.sh` calls using the same digit. Keep execution serial on the target pane. State-changing or interactive steps that require a new context check must remain separate submissions.
 
@@ -58,7 +67,7 @@ REMOTE_TMUX_COMMAND_EXPLANATION='<Chinese explanation shown to the user>' \
 $HOME/.codex/skills/tmux-remote-linux/scripts/run.sh '<command>'
 ```
 
-Approval is per displayed batch and covers only its exact commands, order, target, and stated context. Do not reuse approval for another submission, retry, added or changed command, or changed target/context; show the new batch and obtain a fresh digit. Do not batch unrelated tasks or add commands after approval. Never set `REMOTE_TMUX_PROD_APPROVAL_EXPECTED_DIGIT`, `REMOTE_TMUX_PROD_APPROVAL_DIGIT`, or `REMOTE_TMUX_COMMAND_EXPLANATION` unless the user replied with the matching digit in this conversation.
+Approval is per displayed batch and covers only its exact commands, order, target, and stated context. Do not reuse approval for another submission, retry, added or changed command, or changed target/context; show the new batch and obtain a fresh digit. Do not batch unrelated tasks or add commands after approval. Never set `REMOTE_TMUX_PROD_APPROVAL_EXPECTED_DIGIT`, `REMOTE_TMUX_PROD_APPROVAL_DIGIT`, or `REMOTE_TMUX_COMMAND_EXPLANATION` unless the user sent a valid matching approval reply for this batch in this conversation.
 
 - Read recent remote terminal output:
 
