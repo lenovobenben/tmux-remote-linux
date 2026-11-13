@@ -8,9 +8,11 @@ This skill is designed for reliable shell operations, not full terminal interact
 
 For the full manual, configuration reference, and troubleshooting notes, see [docs/reference.en.md](docs/reference.en.md). A Chinese version is available at [docs/reference.zh-CN.md](docs/reference.zh-CN.md). For building other `tmux-*` interactive-environment skills, see [docs/tmux交互式环境skill开发规范.md](docs/tmux交互式环境skill开发规范.md).
 
+For a standalone Chinese guide to the macOS skill environment, covering iTerm2, tmux, Agent permissions, and skill setup and usage, see [tmux-remote-linux 环境设置（macOS）](docs/tmux-remote-linux环境设置.md).
+
 ## Platform Notes
 
-macOS and Linux are the primary supported environments. On Windows, use WSL and install Codex, Claude Code, Gemini CLI, `tmux`, and this skill inside the same WSL distribution.
+macOS and Linux are the primary supported environments. On Windows, use a Linux environment such as WSL or a Linux container, and run your AI agent, `tmux`, and this skill inside that same environment. The iTerm2 setup guide is specific to macOS.
 
 ## Quick Start
 
